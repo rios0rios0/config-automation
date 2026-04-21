@@ -61,29 +61,65 @@ func (c ReportComplianceChangesCommand) Execute(
 }
 
 func diffAudits(before, after entities.AuditResult) []ComplianceDiff {
+	diffs := make([]ComplianceDiff, 0)
+	diffs = append(diffs, diffRepoSettings(before, after)...)
+	diffs = append(diffs, diffSecurity(before, after)...)
+	diffs = append(diffs, diffBranchProtection(before, after)...)
+	diffs = append(diffs, diffRuleset(before, after)...)
+	return diffs
+}
+
+func diffRepoSettings(before, after entities.AuditResult) []ComplianceDiff {
 	name := after.Repository.Name
 	diffs := make([]ComplianceDiff, 0)
+	diffs = appendBoolDiff(diffs, name, "delete_branch_on_merge",
+		before.Repository.Settings.DeleteBranchOnMerge, after.Repository.Settings.DeleteBranchOnMerge)
+	diffs = appendBoolDiff(diffs, name, "allow_auto_merge",
+		before.Repository.Settings.AllowAutoMerge, after.Repository.Settings.AllowAutoMerge)
+	diffs = appendBoolDiff(diffs, name, "has_wiki",
+		before.Repository.Settings.HasWiki, after.Repository.Settings.HasWiki)
+	diffs = appendBoolDiff(diffs, name, "has_projects",
+		before.Repository.Settings.HasProjects, after.Repository.Settings.HasProjects)
+	return diffs
+}
 
-	diffs = appendBoolDiff(diffs, name, "delete_branch_on_merge", before.Repository.Settings.DeleteBranchOnMerge, after.Repository.Settings.DeleteBranchOnMerge)
-	diffs = appendBoolDiff(diffs, name, "allow_auto_merge", before.Repository.Settings.AllowAutoMerge, after.Repository.Settings.AllowAutoMerge)
-	diffs = appendBoolDiff(diffs, name, "has_wiki", before.Repository.Settings.HasWiki, after.Repository.Settings.HasWiki)
-	diffs = appendBoolDiff(diffs, name, "has_projects", before.Repository.Settings.HasProjects, after.Repository.Settings.HasProjects)
+func diffSecurity(before, after entities.AuditResult) []ComplianceDiff {
+	name := after.Repository.Name
+	diffs := make([]ComplianceDiff, 0)
+	diffs = appendStringDiff(diffs, name, "secret_scanning",
+		before.Security.SecretScanning, after.Security.SecretScanning)
+	diffs = appendStringDiff(diffs, name, "push_protection",
+		before.Security.PushProtection, after.Security.PushProtection)
+	diffs = appendStringDiff(diffs, name, "dependabot_alerts",
+		before.Security.DependabotAlertsState(), after.Security.DependabotAlertsState())
+	diffs = appendBoolDiff(diffs, name, "dependabot_updates",
+		before.Security.DependabotUpdates, after.Security.DependabotUpdates)
+	return diffs
+}
 
-	diffs = appendStringDiff(diffs, name, "secret_scanning", before.Security.SecretScanning, after.Security.SecretScanning)
-	diffs = appendStringDiff(diffs, name, "push_protection", before.Security.PushProtection, after.Security.PushProtection)
-	diffs = appendStringDiff(diffs, name, "dependabot_alerts", before.Security.DependabotAlertsState(), after.Security.DependabotAlertsState())
-	diffs = appendBoolDiff(diffs, name, "dependabot_updates", before.Security.DependabotUpdates, after.Security.DependabotUpdates)
+func diffBranchProtection(before, after entities.AuditResult) []ComplianceDiff {
+	name := after.Repository.Name
+	diffs := make([]ComplianceDiff, 0)
+	diffs = appendBoolDiff(diffs, name, "protection_enabled",
+		before.BranchProtection.Enabled, after.BranchProtection.Enabled)
+	diffs = appendBoolDiff(diffs, name, "prot_dismiss_stale",
+		before.BranchProtection.DismissStaleReviews, after.BranchProtection.DismissStaleReviews)
+	diffs = appendBoolDiff(diffs, name, "prot_conversation_resolution",
+		before.BranchProtection.ConversationResolution, after.BranchProtection.ConversationResolution)
+	diffs = appendStringDiff(diffs, name, "prot_signatures",
+		before.BranchProtection.SignaturesState(), after.BranchProtection.SignaturesState())
+	return diffs
+}
 
-	diffs = appendBoolDiff(diffs, name, "protection_enabled", before.BranchProtection.Enabled, after.BranchProtection.Enabled)
-	diffs = appendBoolDiff(diffs, name, "prot_dismiss_stale", before.BranchProtection.DismissStaleReviews, after.BranchProtection.DismissStaleReviews)
-	diffs = appendBoolDiff(diffs, name, "prot_conversation_resolution", before.BranchProtection.ConversationResolution, after.BranchProtection.ConversationResolution)
-	diffs = appendStringDiff(diffs, name, "prot_signatures", before.BranchProtection.SignaturesState(), after.BranchProtection.SignaturesState())
-
-	diffs = appendBoolDiff(diffs, name, "has_force_push_ruleset", before.HasForcePushRuleset(), after.HasForcePushRuleset())
+func diffRuleset(before, after entities.AuditResult) []ComplianceDiff {
+	name := after.Repository.Name
+	diffs := make([]ComplianceDiff, 0)
+	diffs = appendBoolDiff(diffs, name, "has_force_push_ruleset",
+		before.HasForcePushRuleset(), after.HasForcePushRuleset())
 	if before.Ruleset != nil && after.Ruleset != nil {
-		diffs = appendBoolDiff(diffs, name, "ruleset_admin_bypass", before.Ruleset.AdminBypass, after.Ruleset.AdminBypass)
+		diffs = appendBoolDiff(diffs, name, "ruleset_admin_bypass",
+			before.Ruleset.AdminBypass, after.Ruleset.AdminBypass)
 	}
-
 	return diffs
 }
 

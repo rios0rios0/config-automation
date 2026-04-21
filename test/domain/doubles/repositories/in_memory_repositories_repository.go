@@ -9,7 +9,7 @@ import (
 )
 
 // InMemoryRepositoriesRepository is the in-memory double for
-// repositories.RepositoriesRepository used by command tests. It records
+// repositories.Repository used by command tests. It records
 // every Save call so assertions can verify what the command mutated.
 type InMemoryRepositoriesRepository struct {
 	AuthenticatedLogin string
@@ -48,7 +48,12 @@ func (r *InMemoryRepositoriesRepository) FindOwnerKind(_ context.Context, _ stri
 	return r.OwnerKind, r.ErrorOnOwnerKind
 }
 
-func (r *InMemoryRepositoriesRepository) FindAllByOwner(_ context.Context, _ string, _ bool, _ repositories.OwnerKind) ([]entities.Repository, error) {
+func (r *InMemoryRepositoriesRepository) FindAllByOwner(
+	_ context.Context,
+	_ string,
+	_ bool,
+	_ repositories.OwnerKind,
+) ([]entities.Repository, error) {
 	return r.Repos, r.ErrorOnList
 }
 

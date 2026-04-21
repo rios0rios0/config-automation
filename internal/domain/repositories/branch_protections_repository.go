@@ -2,9 +2,15 @@ package repositories
 
 import (
 	"context"
+	"errors"
 
 	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
 )
+
+// ErrRulesetNotFound is returned by FindRulesetByName when no ruleset
+// with the requested name exists on the repository. Callers treat it as
+// "no ruleset configured" rather than as a propagated failure.
+var ErrRulesetNotFound = errors.New("ruleset not found")
 
 // BranchProtectionsRepository is the port for classic branch protection
 // and the `main-protection` ruleset. They live together because they

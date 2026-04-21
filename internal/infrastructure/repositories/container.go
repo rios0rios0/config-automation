@@ -22,7 +22,7 @@ func RegisterProviders(container *dig.Container) error {
 		NewGoGithubBranchProtectionsRepository,
 		// Bind the concrete structs to the domain interfaces so
 		// constructors that depend on the interface type can resolve.
-		func(impl *GoGithubRepositoriesRepository) repositories.RepositoriesRepository {
+		func(impl *GoGithubRepositoriesRepository) repositories.Repository {
 			return impl
 		},
 		func(impl *GoGithubSecuritySettingsRepository) repositories.SecuritySettingsRepository {

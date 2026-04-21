@@ -12,7 +12,11 @@ import (
 	"github.com/rios0rios0/fleet-maintenance/internal/domain/repositories"
 )
 
-// GoGithubRepositoriesRepository implements repositories.RepositoriesRepository
+// githubListPerPage is the upper bound the GitHub API accepts for
+// paginated list endpoints.
+const githubListPerPage = 100
+
+// GoGithubRepositoriesRepository implements repositories.Repository
 // by wrapping the google/go-github client. The mapping from go-github's
 // `*github.Repository` into entities.Repository lives inline in this file;
 // a separate mapper package would be overkill for one adapter.
@@ -26,7 +30,7 @@ func NewGoGithubRepositoriesRepository(client *github.Client) *GoGithubRepositor
 }
 
 // Ensure the interface is satisfied at compile time.
-var _ repositories.RepositoriesRepository = (*GoGithubRepositoriesRepository)(nil)
+var _ repositories.Repository = (*GoGithubRepositoriesRepository)(nil)
 
 // FindAuthenticatedLogin returns the login for the token the client
 // was configured with.
@@ -42,7 +46,10 @@ func (r GoGithubRepositoriesRepository) FindAuthenticatedLogin(ctx context.Conte
 }
 
 // FindOwnerKind returns whether the owner is a User or Organization.
-func (r GoGithubRepositoriesRepository) FindOwnerKind(ctx context.Context, owner string) (repositories.OwnerKind, error) {
+func (r GoGithubRepositoriesRepository) FindOwnerKind(
+	ctx context.Context,
+	owner string,
+) (repositories.OwnerKind, error) {
 	user, _, err := r.client.Users.Get(ctx, owner)
 	if err != nil {
 		return "", err
@@ -62,7 +69,7 @@ func (r GoGithubRepositoriesRepository) FindAllByOwner(
 	authenticated bool,
 	kind repositories.OwnerKind,
 ) ([]entities.Repository, error) {
-	opts := &github.ListOptions{PerPage: 100}
+	opts := &github.ListOptions{PerPage: githubListPerPage}
 	collected := make([]*github.Repository, 0)
 
 	for {
@@ -117,7 +124,10 @@ func (r GoGithubRepositoriesRepository) FindAllByOwner(
 
 // FindByName fetches full detail for one repository. This endpoint
 // returns security_and_analysis, which the list endpoints omit.
-func (r GoGithubRepositoriesRepository) FindByName(ctx context.Context, owner, name string) (entities.Repository, error) {
+func (r GoGithubRepositoriesRepository) FindByName(
+	ctx context.Context,
+	owner, name string,
+) (entities.Repository, error) {
 	repo, _, err := r.client.Repositories.Get(ctx, owner, name)
 	if err != nil {
 		return entities.Repository{}, err
@@ -132,13 +142,13 @@ func (r GoGithubRepositoriesRepository) FindByName(ctx context.Context, owner, n
 // policy are not touched.
 func (r GoGithubRepositoriesRepository) Save(ctx context.Context, repo entities.Repository) error {
 	patch := &github.Repository{
-		DeleteBranchOnMerge: boolPtr(repo.Settings.DeleteBranchOnMerge),
-		AllowAutoMerge:      boolPtr(repo.Settings.AllowAutoMerge),
-		AllowSquashMerge:    boolPtr(repo.Settings.AllowSquashMerge),
-		AllowRebaseMerge:    boolPtr(repo.Settings.AllowRebaseMerge),
-		AllowMergeCommit:    boolPtr(repo.Settings.AllowMergeCommit),
-		HasWiki:             boolPtr(repo.Settings.HasWiki),
-		HasProjects:         boolPtr(repo.Settings.HasProjects),
+		DeleteBranchOnMerge: new(repo.Settings.DeleteBranchOnMerge),
+		AllowAutoMerge:      new(repo.Settings.AllowAutoMerge),
+		AllowSquashMerge:    new(repo.Settings.AllowSquashMerge),
+		AllowRebaseMerge:    new(repo.Settings.AllowRebaseMerge),
+		AllowMergeCommit:    new(repo.Settings.AllowMergeCommit),
+		HasWiki:             new(repo.Settings.HasWiki),
+		HasProjects:         new(repo.Settings.HasProjects),
 	}
 	_, _, err := r.client.Repositories.Edit(ctx, repo.Owner, repo.Name, patch)
 	return err
@@ -203,8 +213,4 @@ func nameOrEmpty(repo *github.Repository) string {
 		return ""
 	}
 	return *repo.Name
-}
-
-func boolPtr(b bool) *bool {
-	return &b
 }

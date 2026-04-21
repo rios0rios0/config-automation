@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
@@ -11,14 +12,14 @@ import (
 // AuditRepositoriesCommand runs phase 1: walks every repo for a given
 // owner and produces an AuditResult per repo. Read-only.
 type AuditRepositoriesCommand struct {
-	reposRepo            repositories.RepositoriesRepository
+	reposRepo            repositories.Repository
 	securityRepo         repositories.SecuritySettingsRepository
 	branchProtectionRepo repositories.BranchProtectionsRepository
 }
 
 // NewAuditRepositoriesCommand is the Dig-injectable constructor.
 func NewAuditRepositoriesCommand(
-	reposRepo repositories.RepositoriesRepository,
+	reposRepo repositories.Repository,
 	securityRepo repositories.SecuritySettingsRepository,
 	branchProtectionRepo repositories.BranchProtectionsRepository,
 ) *AuditRepositoriesCommand {
@@ -93,7 +94,11 @@ func (c AuditRepositoriesCommand) Execute(
 	listeners.OnSuccess(audits)
 }
 
-func (c AuditRepositoriesCommand) auditOne(ctx context.Context, owner string, repo entities.Repository) entities.AuditResult {
+func (c AuditRepositoriesCommand) auditOne(
+	ctx context.Context,
+	owner string,
+	repo entities.Repository,
+) entities.AuditResult {
 	// Always refetch individual details since the list endpoint omits
 	// security_and_analysis and secret-scanning fields.
 	detailed, err := c.reposRepo.FindByName(ctx, owner, repo.Name)
@@ -106,14 +111,28 @@ func (c AuditRepositoriesCommand) auditOne(ctx context.Context, owner string, re
 		return entities.AuditResult{Repository: detailed, AuditError: fmt.Sprintf("security: %s", err.Error())}
 	}
 
-	protection, err := c.branchProtectionRepo.FindProtectionByBranch(ctx, owner, detailed.Name, entities.DesiredDefaultBranch)
+	protection, err := c.branchProtectionRepo.FindProtectionByBranch(
+		ctx,
+		owner,
+		detailed.Name,
+		entities.DesiredDefaultBranch,
+	)
 	if err != nil {
-		return entities.AuditResult{Repository: detailed, Security: security, AuditError: fmt.Sprintf("protection: %s", err.Error())}
+		return entities.AuditResult{
+			Repository: detailed,
+			Security:   security,
+			AuditError: fmt.Sprintf("protection: %s", err.Error()),
+		}
 	}
 
 	ruleset, err := c.branchProtectionRepo.FindRulesetByName(ctx, owner, detailed.Name, entities.DesiredRulesetName)
-	if err != nil {
-		return entities.AuditResult{Repository: detailed, Security: security, BranchProtection: protection, AuditError: fmt.Sprintf("ruleset: %s", err.Error())}
+	if err != nil && !errors.Is(err, repositories.ErrRulesetNotFound) {
+		return entities.AuditResult{
+			Repository:       detailed,
+			Security:         security,
+			BranchProtection: protection,
+			AuditError:       fmt.Sprintf("ruleset: %s", err.Error()),
+		}
 	}
 
 	return entities.AuditResult{

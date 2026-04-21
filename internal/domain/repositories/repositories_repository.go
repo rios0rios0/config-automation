@@ -16,10 +16,10 @@ const (
 	OwnerKindOrganization OwnerKind = "Organization"
 )
 
-// RepositoriesRepository is the port for listing and mutating the
+// Repository is the port for listing and mutating the
 // repository-level settings exposed by `GET/PATCH /repos/{owner}/{repo}`.
 // Implementations live in internal/infrastructure/repositories.
-type RepositoriesRepository interface {
+type Repository interface {
 	// FindAuthenticatedLogin returns the login of the token's owner, or
 	// an error when the /user endpoint is unreachable.
 	FindAuthenticatedLogin(ctx context.Context) (string, error)

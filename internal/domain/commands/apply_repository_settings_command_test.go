@@ -52,7 +52,7 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 
 		// then
 		require.Len(t, reposRepo.Saves, 1)
-		assert.Equal(t, entities.DesiredRepoSettings, reposRepo.Saves[0].Settings)
+		assert.Equal(t, entities.DesiredRepoSettings(), reposRepo.Saves[0].Settings)
 		require.Len(t, changes, 1)
 		assert.True(t, changes[0].Applied)
 		assert.Equal(t, 1, changed)
@@ -82,7 +82,7 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 	t.Run("should keep current HasWiki for repos in the allowlist", func(t *testing.T) {
 		t.Parallel()
 		// given — the allowlist currently holds "guide"
-		settings := entities.DesiredRepoSettings
+		settings := entities.DesiredRepoSettings()
 		settings.HasWiki = true
 		audit := builders.NewAuditResultBuilder().
 			WithRepository(builders.NewRepositoryBuilder().WithName("guide").WithSettings(settings).Build()).
@@ -104,7 +104,7 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 		t.Parallel()
 		// given — private repo with AutoMerge=false; policy says true, but
 		// Free plan silently ignores the PATCH so we leave it alone.
-		settings := entities.DesiredRepoSettings
+		settings := entities.DesiredRepoSettings()
 		settings.AllowAutoMerge = false
 		repo := builders.NewRepositoryBuilder().WithName("secret").AsPrivate().WithSettings(settings).Build()
 		audit := builders.NewAuditResultBuilder().WithRepository(repo).Build()

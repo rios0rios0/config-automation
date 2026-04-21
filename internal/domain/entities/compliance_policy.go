@@ -2,23 +2,29 @@ package entities
 
 // DesiredRepoSettings is the enforced policy for every `rios0rios0` repo
 // (phase 2). Forks and private repos may have per-field carve-outs;
-// AuditResult.ComputeIssues() encodes those.
-var DesiredRepoSettings = RepositorySettings{
-	DeleteBranchOnMerge: true,
-	AllowAutoMerge:      true,
-	AllowSquashMerge:    true,
-	AllowRebaseMerge:    true,
-	AllowMergeCommit:    true,
-	HasWiki:             false,
-	HasProjects:         false,
+// AuditResult.ComputeIssues() encodes those. Exposed as a function so
+// the policy stays immutable from call sites.
+func DesiredRepoSettings() RepositorySettings {
+	return RepositorySettings{
+		DeleteBranchOnMerge: true,
+		AllowAutoMerge:      true,
+		AllowSquashMerge:    true,
+		AllowRebaseMerge:    true,
+		AllowMergeCommit:    true,
+		HasWiki:             false,
+		HasProjects:         false,
+	}
 }
 
 // DesiredWikiAllowlist lists repos that legitimately use the wiki
 // feature and should keep has_wiki=true. Verified with
 // `git ls-remote <repo>.wiki.git`: the entries here have actual wiki
-// content; every other repo's wiki is empty noise.
-var DesiredWikiAllowlist = map[string]struct{}{
-	"guide": {},
+// content; every other repo's wiki is empty noise. Returns a fresh map
+// each call to keep the allowlist immutable from call sites.
+func DesiredWikiAllowlist() map[string]struct{} {
+	return map[string]struct{}{
+		"guide": {},
+	}
 }
 
 // DesiredReviewCount is the policy for classic branch protection. The

@@ -29,7 +29,7 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should flag has_wiki drift unless the repo is allowlisted", func(t *testing.T) {
 		t.Parallel()
 		// given
-		settings := entities.DesiredRepoSettings
+		settings := entities.DesiredRepoSettings()
 		settings.HasWiki = true
 		repo := builders.NewRepositoryBuilder().WithName("not-in-allowlist").WithSettings(settings).Build()
 		audit := builders.NewAuditResultBuilder().WithRepository(repo).Build()
@@ -44,7 +44,7 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should skip has_wiki for allowlisted repos", func(t *testing.T) {
 		t.Parallel()
 		// given
-		settings := entities.DesiredRepoSettings
+		settings := entities.DesiredRepoSettings()
 		settings.HasWiki = true
 		repo := builders.NewRepositoryBuilder().WithName("guide").WithSettings(settings).Build()
 		audit := builders.NewAuditResultBuilder().WithRepository(repo).Build()
@@ -59,7 +59,7 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should skip secret scanning on private repos", func(t *testing.T) {
 		t.Parallel()
 		// given
-		privateRepo := builders.NewRepositoryBuilder().WithName("secret").AsPrivate().WithSettings(entities.DesiredRepoSettings).Build()
+		privateRepo := builders.NewRepositoryBuilder().WithName("secret").AsPrivate().WithSettings(entities.DesiredRepoSettings()).Build()
 		disabled := true
 		audit := builders.NewAuditResultBuilder().
 			WithRepository(privateRepo).
@@ -85,7 +85,7 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should skip Dependabot on forks", func(t *testing.T) {
 		t.Parallel()
 		// given
-		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithSettings(entities.DesiredRepoSettings).Build()
+		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithSettings(entities.DesiredRepoSettings()).Build()
 		audit := builders.NewAuditResultBuilder().
 			WithRepository(forkRepo).
 			WithSecurity(entities.SecuritySettings{DependabotUpdates: false}). // alerts unknown, updates off
@@ -104,7 +104,7 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should distinguish dependabot_alerts=unknown from =off", func(t *testing.T) {
 		t.Parallel()
 		// given — public repo with alerts=nil (API failure).
-		publicRepo := builders.NewRepositoryBuilder().WithSettings(entities.DesiredRepoSettings).Build()
+		publicRepo := builders.NewRepositoryBuilder().WithSettings(entities.DesiredRepoSettings()).Build()
 		audit := builders.NewAuditResultBuilder().
 			WithRepository(publicRepo).
 			WithSecurity(entities.SecuritySettings{

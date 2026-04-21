@@ -16,6 +16,15 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- renamed the `repositories.RepositoriesRepository` port to `repositories.Repository` to remove the package-name stutter flagged by `revive`
+- converted `entities.DesiredRepoSettings` and `entities.DesiredWikiAllowlist` from package-level variables to functions, keeping the compliance policy immutable from call sites
+
+### Fixed
+
+- fixed all `golangci-lint` findings surfaced by CI on the `0.1.0` bump PR: `forbidigo` (table output now uses `fmt.Fprintf(os.Stdout, ...)` instead of `fmt.Print*`), `goconst` (extracted `SecurityStateEnabled`/`SecurityStateDisabled`/`SecurityStateUnknown`), `mnd` (named phase constants `phaseAudit`, `phaseApplyRepo`, `phaseApplySecurity`, `phaseApplyProtection`, `phaseReport`, `exitUsageError`, `secretColumnWidth`, `tableWidth`, `githubListPerPage`), `govet` shadow (renamed inner `err` shadows), `nilnil` (replaced `return nil, nil` with a new `repositories.ErrRulesetNotFound` sentinel handled by `AuditRepositoriesCommand`), `gocognit`/`nestif` (extracted per-concern helpers in `ApplyBranchProtectionCommand`, `ApplySecuritySettingsCommand`, `AuditResult.ComputeIssues`, `mapRulesetToEntity`, `printAuditTable`, and `diffAudits`), and `funlen` (split `diffAudits` into `diffRepoSettings`, `diffSecurity`, `diffBranchProtection`, `diffRuleset`)
+
 ## [0.1.0] - 2026-04-21
 
 ### Added
@@ -27,7 +36,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 - added `cmd/harden-repos/`, a Go CLI following Clean Architecture that enforces repo settings, Dependabot, secret scanning, branch protection, and the `main-protection` ruleset across every `rios0rios0` GitHub repository — supports phases 1-5, `--list-json`, `--dry-run`, `--repo` filter, and `--fail-on-noncompliant`
 - added `internal/domain/commands/` with one command per phase (`AuditRepositoriesCommand`, `ApplyRepositorySettingsCommand`, `ApplySecuritySettingsCommand`, `ApplyBranchProtectionCommand`, `ListTargetRepositoriesCommand`, `ReportComplianceChangesCommand`) — each command exposes a listeners struct that maps outcomes to the CLI (controller) layer
 - added `internal/domain/entities/` covering `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, and `AuditResult`, with `compliance_policy.go` as the single source of truth for every policy constant (`DesiredRepoSettings`, `DesiredWikiAllowlist`, `DesiredReviewCount`, `DesiredRulesetName`, `DesiredDefaultBranch`, `RepositoryAdminActorType`/`ID`)
-- added `internal/domain/repositories/` with three small port interfaces (`RepositoriesRepository`, `SecuritySettingsRepository`, `BranchProtectionsRepository`) so the domain layer never imports the `github.com/google/go-github/v66` SDK
+- added `internal/domain/repositories/` with three small port interfaces (`Repository`, `SecuritySettingsRepository`, `BranchProtectionsRepository`) so the domain layer never imports the `github.com/google/go-github/v66` SDK
 - added `internal/infrastructure/repositories/` with three `GoGithub…Repository` adapters wrapping `github.com/google/go-github/v66` + `golang.org/x/oauth2`
 - added `Makefile` with `build`, `run`, `test`, `lint`, `sast`, `setup`, and `clean` targets; `sast` delegates to the SAST toolchain in `rios0rios0/pipelines` per `.claude/rules/ci-cd.md`
 - added `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `LICENSE`, and `.editorconfig` to bootstrap the repository
