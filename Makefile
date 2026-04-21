@@ -1,40 +1,28 @@
-.PHONY: build run test lint sast clean setup help
+SCRIPTS_DIR ?= $(HOME)/Development/github.com/rios0rios0/pipelines
+-include $(SCRIPTS_DIR)/makefiles/common.mk
+-include $(SCRIPTS_DIR)/makefiles/golang.mk
 
-BINARY := bin/harden-repos
-CMD := ./cmd/harden-repos
-PIPELINES_DIR := .pipelines
+VERSION ?= $(shell { git describe --tags --abbrev=0 2>/dev/null || echo "dev"; } | sed 's/^v//')
+LDFLAGS := -X main.version=$(VERSION)
 
-help:
-	@echo 'Targets:'
-	@echo '  build   Build the harden-repos binary into bin/'
-	@echo '  run     Run the harden-repos CLI (pass args via ARGS="...")'
-	@echo '  test    Run unit tests with race detector'
-	@echo '  lint    Run golangci-lint across the module'
-	@echo '  sast    Run the full SAST suite from rios0rios0/pipelines'
-	@echo '  clean   Remove build artifacts'
-	@echo '  setup   Clone/update the rios0rios0/pipelines repository locally'
-
-setup:
-	@if [ ! -d "$(PIPELINES_DIR)" ]; then \
-		git clone --depth 1 https://github.com/rios0rios0/pipelines.git "$(PIPELINES_DIR)"; \
-	else \
-		git -C "$(PIPELINES_DIR)" pull --ff-only; \
-	fi
+.PHONY: debug build build-musl install run
 
 build:
-	go build -o $(BINARY) $(CMD)
+	rm -rf bin
+	go build -ldflags "$(LDFLAGS) -s -w" -o bin/harden-repos ./cmd/harden-repos
+
+debug:
+	rm -rf bin
+	go build -gcflags "-N -l" -ldflags "$(LDFLAGS)" -o bin/harden-repos ./cmd/harden-repos
+
+build-musl:
+	CGO_ENABLED=1 CC=musl-gcc go build \
+		-ldflags "$(LDFLAGS) -linkmode external -extldflags='-static' -s -w" -o bin/harden-repos ./cmd/harden-repos
 
 run:
-	go run $(CMD) $(ARGS)
+	go run ./cmd/harden-repos
 
-test:
-	go test -race -tags=unit ./...
-
-lint:
-	golangci-lint run ./...
-
-sast: setup
-	bash $(PIPELINES_DIR)/scripts/sast/run-all.sh
-
-clean:
-	rm -rf bin coverage.out coverage.html
+install:
+	make build
+	mkdir -p ~/.local/bin
+	cp -v bin/harden-repos ~/.local/bin/harden-repos

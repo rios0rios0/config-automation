@@ -19,11 +19,11 @@ Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github
 
 Three repository secrets must be set on `rios0rios0/fleet-maintenance`:
 
-| Secret | Purpose | Scope |
-|---|---|---|
-| `COMPLIANCE_AUDIT_TOKEN` | Lists all `rios0rios0` repos and reads security/ruleset endpoints for the daily audit. | Classic PAT with the `repo` scope, **or** fine-grained PAT scoped to all repositories under `rios0rios0` with read access to `Administration`, `Contents`, `Metadata`, `Webhooks`, and to `Dependabot alerts` and `Secret scanning alerts`. |
-| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/ai-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under `rios0rios0` with `Contents: write`, `Pull requests: write`, and `Metadata: read`. |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Authenticates `anthropics/claude-code-action@v1` during the refresh. | Claude Code OAuth token. |
+| Secret                    | Purpose                                                                                                | Scope                                                                                                                                                                                                                                       |
+|---------------------------|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `COMPLIANCE_AUDIT_TOKEN`  | Lists all `rios0rios0` repos and reads security/ruleset endpoints for the daily audit.                 | Classic PAT with the `repo` scope, **or** fine-grained PAT scoped to all repositories under `rios0rios0` with read access to `Administration`, `Contents`, `Metadata`, `Webhooks`, and to `Dependabot alerts` and `Secret scanning alerts`. |
+| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/ai-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under `rios0rios0` with `Contents: write`, `Pull requests: write`, and `Metadata: read`.                                                                                                        |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Authenticates `anthropics/claude-code-action@v1` during the refresh.                                   | Claude Code OAuth token.                                                                                                                                                                                                                    |
 
 Set them with:
 

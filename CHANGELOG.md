@@ -31,6 +31,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 - added `.golangci.yaml`, `.gitignore`, and `go.mod` (Go 1.26) with the team-standard linter baseline
 - added `scripts/refresh_ai_docs_prompt.md`, the prompt consumed by the refresh workflow that instructs Claude Code to cover both AI-assistant guidance files, record any refresh in `CHANGELOG.md`, and make no edits when the existing files are accurate
 - added `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `LICENSE`, and `.editorconfig` to bootstrap the repository
+- added `.github/copilot-instructions.md`, the AI-assistant context file summarizing the project's architecture, Clean Architecture invariants, build/test/lint commands, environment variables, and policy-change workflow so Copilot / Cursor / Claude Code have consistent grounding without reloading the whole codebase
 
 ### Changed
 
