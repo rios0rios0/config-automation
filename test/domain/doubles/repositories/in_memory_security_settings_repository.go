@@ -17,10 +17,10 @@ type InMemorySecuritySettingsRepository struct {
 	AutomatedSecurityFixesEnabled []string
 	SecretScanningEnabled         []string
 
-	ErrorOnFind                  error
-	ErrorOnEnableAlerts          error
-	ErrorOnEnableFixes           error
-	ErrorOnEnableSecretScanning  error
+	ErrorOnFind                 error
+	ErrorOnEnableAlerts         error
+	ErrorOnEnableFixes          error
+	ErrorOnEnableSecretScanning error
 }
 
 // NewInMemorySecuritySettingsRepository builds the double.
@@ -31,12 +31,18 @@ func NewInMemorySecuritySettingsRepository() *InMemorySecuritySettingsRepository
 }
 
 // WithSettings seeds the tri-state security snapshot for one repo.
-func (r *InMemorySecuritySettingsRepository) WithSettings(name string, settings entities.SecuritySettings) *InMemorySecuritySettingsRepository {
+func (r *InMemorySecuritySettingsRepository) WithSettings(
+	name string,
+	settings entities.SecuritySettings,
+) *InMemorySecuritySettingsRepository {
 	r.SettingsByName[name] = settings
 	return r
 }
 
-func (r *InMemorySecuritySettingsRepository) FindByRepositoryName(_ context.Context, repo entities.Repository) (entities.SecuritySettings, error) {
+func (r *InMemorySecuritySettingsRepository) FindByRepositoryName(
+	_ context.Context,
+	repo entities.Repository,
+) (entities.SecuritySettings, error) {
 	if r.ErrorOnFind != nil {
 		return entities.SecuritySettings{}, r.ErrorOnFind
 	}

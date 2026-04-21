@@ -15,6 +15,17 @@ import (
 	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
 )
 
+const (
+	phaseAudit           = 1
+	phaseApplyRepo       = 2
+	phaseApplySecurity   = 3
+	phaseApplyProtection = 4
+	phaseReport          = 5
+	exitUsageError       = 2
+	secretColumnWidth    = 7
+	tableWidth           = 155
+)
+
 func main() {
 	var (
 		phase              int
@@ -24,11 +35,26 @@ func main() {
 		failOnNonCompliant bool
 	)
 
-	flag.IntVar(&phase, "phase", 0, "audit/apply phase (1-5); 0 means 'all audit phases when --dry-run, otherwise required'")
+	flag.IntVar(
+		&phase,
+		"phase",
+		0,
+		"audit/apply phase (1-5); 0 means 'all audit phases when --dry-run, otherwise required'",
+	)
 	flag.StringVar(&repoFilter, "repo", "", "target a single repository by name")
-	flag.BoolVar(&listJSON, "list-json", false, "emit a JSON array of non-fork non-archived repos for the AI docs matrix")
+	flag.BoolVar(
+		&listJSON,
+		"list-json",
+		false,
+		"emit a JSON array of non-fork non-archived repos for the AI docs matrix",
+	)
 	flag.BoolVar(&dryRun, "dry-run", false, "run phases 1-4 without mutating anything")
-	flag.BoolVar(&failOnNonCompliant, "fail-on-noncompliant", false, "exit 1 when phase 1 detects any non-compliant repo")
+	flag.BoolVar(
+		&failOnNonCompliant,
+		"fail-on-noncompliant",
+		false,
+		"exit 1 when phase 1 detects any non-compliant repo",
+	)
 	flag.Parse()
 
 	owner := os.Getenv("HARDEN_OWNER")
@@ -44,34 +70,38 @@ func main() {
 		runListJSON(ctx, set, owner)
 	case dryRun:
 		runDryRun(ctx, set, owner, repoFilter)
-	case phase == 1:
+	case phase == phaseAudit:
 		runPhase1(ctx, set, owner, repoFilter, failOnNonCompliant)
-	case phase == 2:
+	case phase == phaseApplyRepo:
 		runPhase2(ctx, set, owner, repoFilter)
-	case phase == 3:
+	case phase == phaseApplySecurity:
 		runPhase3(ctx, set, owner, repoFilter)
-	case phase == 4:
+	case phase == phaseApplyProtection:
 		runPhase4(ctx, set, owner, repoFilter)
-	case phase == 5:
+	case phase == phaseReport:
 		runPhase5(ctx, set, owner)
 	default:
 		logger.Error("must specify --phase 1..5, --list-json, or --dry-run")
 		flag.Usage()
-		os.Exit(2)
+		os.Exit(exitUsageError)
 	}
 }
 
 // runListJSON emits the JSON array consumed by the AI docs matrix.
 func runListJSON(ctx context.Context, set commandSet, owner string) {
 	var result []entities.Repository
-	set.ListTargets.Execute(ctx, commands.ListTargetRepositoriesInput{Owner: owner}, commands.ListTargetRepositoriesListeners{
-		OnSuccess: func(repos []entities.Repository) {
-			result = repos
+	set.ListTargets.Execute(
+		ctx,
+		commands.ListTargetRepositoriesInput{Owner: owner},
+		commands.ListTargetRepositoriesListeners{
+			OnSuccess: func(repos []entities.Repository) {
+				result = repos
+			},
+			OnError: func(err error) {
+				logger.WithError(err).Fatal("listing target repos")
+			},
 		},
-		OnError: func(err error) {
-			logger.WithError(err).Fatal("listing target repos")
-		},
-	})
+	)
 
 	payload := make([]map[string]string, 0, len(result))
 	for _, r := range result {
@@ -127,6 +157,10 @@ func runPhase2(ctx context.Context, set commandSet, owner, repoFilter string) {
 	})
 }
 
+// runPhase3 mirrors runPhase4's shape but dispatches a different
+// command with a distinct listener type, so the duplication is intrinsic.
+//
+//nolint:dupl // distinct listener/input types prevent a generic extraction
 func runPhase3(ctx context.Context, set commandSet, owner, repoFilter string) {
 	audits := executeAudit(ctx, set, owner, repoFilter)
 	saveSnapshot(audits, auditBeforePath())
@@ -146,7 +180,8 @@ func runPhase3(ctx context.Context, set commandSet, owner, repoFilter string) {
 			logger.WithFields(logger.Fields{"repo": name, "reason": reason}).Info("skipped")
 		},
 		OnSuccess: func(secretScanning, dependabot int) {
-			logger.WithFields(logger.Fields{"secret_scanning": secretScanning, "dependabot": dependabot}).Info("phase 3 complete")
+			logger.WithFields(logger.Fields{"secret_scanning": secretScanning, "dependabot": dependabot}).
+				Info("phase 3 complete")
 		},
 		OnError: func(name string, err error) {
 			logger.WithError(err).WithField("repo", name).Error("phase 3 error")
@@ -154,6 +189,10 @@ func runPhase3(ctx context.Context, set commandSet, owner, repoFilter string) {
 	})
 }
 
+// runPhase4 mirrors runPhase3's shape but dispatches a different
+// command with a distinct listener type, so the duplication is intrinsic.
+//
+//nolint:dupl // distinct listener/input types prevent a generic extraction
 func runPhase4(ctx context.Context, set commandSet, owner, repoFilter string) {
 	audits := executeAudit(ctx, set, owner, repoFilter)
 	saveSnapshot(audits, auditBeforePath())
@@ -219,12 +258,12 @@ func runDryRun(ctx context.Context, set commandSet, owner, repoFilter string) {
 		OnChange: func(change commands.ApplyRepositorySettingsChange) {
 			logger.WithFields(logger.Fields{
 				"repo":   change.RepositoryName,
-				"phase":  2,
+				"phase":  phaseApplyRepo,
 				"action": "repo_settings",
 			}).Info("would apply")
 		},
 		OnSuccess: func(_, _ int) {},
-		OnError: func(_ string, _ error) {},
+		OnError:   func(_ string, _ error) {},
 	})
 
 	set.ApplySecurity.Execute(ctx, commands.ApplySecuritySettingsInput{
@@ -235,7 +274,7 @@ func runDryRun(ctx context.Context, set commandSet, owner, repoFilter string) {
 		OnChange: func(change commands.ApplySecuritySettingsChange) {
 			logger.WithFields(logger.Fields{
 				"repo":   change.RepositoryName,
-				"phase":  3,
+				"phase":  phaseApplySecurity,
 				"action": change.Action,
 			}).Info("would apply")
 		},
@@ -251,7 +290,7 @@ func runDryRun(ctx context.Context, set commandSet, owner, repoFilter string) {
 		OnChange: func(change commands.ApplyBranchProtectionChange) {
 			logger.WithFields(logger.Fields{
 				"repo":   change.RepositoryName,
-				"phase":  4,
+				"phase":  phaseApplyProtection,
 				"action": change.Action,
 			}).Info("would apply")
 		},
@@ -283,44 +322,56 @@ func executeAudit(ctx context.Context, set commandSet, owner, repoFilter string)
 func printAuditTable(audits []entities.AuditResult) {
 	sort.Slice(audits, func(i, j int) bool { return audits[i].Repository.Name < audits[j].Repository.Name })
 
-	fmt.Printf("\n%-40s %-8s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-6s %-5s\n",
-		"REPO", "VIS", "DEL-BR", "AUTO-M", "WIKI", "PROJ", "SEC-SC", "PUSH-P", "DEP-AL", "DEP-UP", "PROT", "NO-FP", "STALE", "SIGS")
-	fmt.Println(stringOfChar('-', 155))
+	printTableHeader()
+	nonCompliant := printTableRows(audits)
+	printSummary(audits)
+	printNonComplianceReport(audits, nonCompliant)
+}
 
+func printTableHeader() {
+	fmt.Fprintf(
+		os.Stdout,
+		"\n%-40s %-8s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-6s %-5s\n",
+		"REPO",
+		"VIS",
+		"DEL-BR",
+		"AUTO-M",
+		"WIKI",
+		"PROJ",
+		"SEC-SC",
+		"PUSH-P",
+		"DEP-AL",
+		"DEP-UP",
+		"PROT",
+		"NO-FP",
+		"STALE",
+		"SIGS",
+	)
+	fmt.Fprintln(os.Stdout, stringOfChar('-', tableWidth))
+}
+
+func printTableRows(audits []entities.AuditResult) int {
 	nonCompliant := 0
 	for _, a := range audits {
 		repo := a.Repository
 		if a.AuditError != "" {
-			fmt.Printf("%-40s ERROR: %s\n", repo.Name, a.AuditError)
+			fmt.Fprintf(os.Stdout, "%-40s ERROR: %s\n", repo.Name, a.AuditError)
 			continue
 		}
 
-		prot := "N"
-		switch {
-		case a.BranchProtection.Enabled:
-			prot = "Y"
-		case !a.BranchProtection.Available:
-			prot = "N/A"
-		}
-
-		noFp := "N"
-		if a.HasForcePushRuleset() {
-			noFp = "Y"
-		}
-
-		fmt.Printf("%-40s %-8s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-6s %-5s\n",
+		fmt.Fprintf(os.Stdout, "%-40s %-8s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-6s %-5s\n",
 			repo.Name,
 			repo.Visibility,
 			yesNo(repo.Settings.DeleteBranchOnMerge),
 			yesNo(repo.Settings.AllowAutoMerge),
 			yesNo(repo.Settings.HasWiki),
 			yesNo(repo.Settings.HasProjects),
-			truncate(defaultIfEmpty(a.Security.SecretScanning, "N/A"), 7),
-			truncate(defaultIfEmpty(a.Security.PushProtection, "N/A"), 7),
+			truncate(defaultIfEmpty(a.Security.SecretScanning, "N/A"), secretColumnWidth),
+			truncate(defaultIfEmpty(a.Security.PushProtection, "N/A"), secretColumnWidth),
 			yesNoTri(a.Security.DependabotAlerts),
 			yesNo(a.Security.DependabotUpdates),
-			prot,
-			noFp,
+			protectionLabel(a),
+			forcePushLabel(a),
 			yesNo(a.BranchProtection.DismissStaleReviews),
 			yesNoTri(a.BranchProtection.Signatures),
 		)
@@ -329,7 +380,28 @@ func printAuditTable(audits []entities.AuditResult) {
 			nonCompliant++
 		}
 	}
+	return nonCompliant
+}
 
+func protectionLabel(a entities.AuditResult) string {
+	switch {
+	case a.BranchProtection.Enabled:
+		return "Y"
+	case !a.BranchProtection.Available:
+		return "N/A"
+	default:
+		return "N"
+	}
+}
+
+func forcePushLabel(a entities.AuditResult) string {
+	if a.HasForcePushRuleset() {
+		return "Y"
+	}
+	return "N"
+}
+
+func printSummary(audits []entities.AuditResult) {
 	total := len(audits)
 	public := 0
 	private := 0
@@ -352,12 +424,14 @@ func printAuditTable(audits []entities.AuditResult) {
 			unavailable++
 		}
 	}
-	fmt.Printf("\nSummary: %d repos (%d public, %d private, %d forks)\n", total, public, private, forks)
-	fmt.Printf("Branch protection: %d enabled, %d unavailable\n", protected, unavailable)
+	fmt.Fprintf(os.Stdout, "\nSummary: %d repos (%d public, %d private, %d forks)\n", total, public, private, forks)
+	fmt.Fprintf(os.Stdout, "Branch protection: %d enabled, %d unavailable\n", protected, unavailable)
+}
 
-	fmt.Println("\n=== NON-COMPLIANCE REPORT ===")
+func printNonComplianceReport(audits []entities.AuditResult, nonCompliant int) {
+	fmt.Fprintln(os.Stdout, "\n=== NON-COMPLIANCE REPORT ===")
 	if nonCompliant == 0 {
-		fmt.Println("\nAll repos are compliant.")
+		fmt.Fprintln(os.Stdout, "\nAll repos are compliant.")
 		return
 	}
 	for _, a := range audits {
@@ -365,12 +439,12 @@ func printAuditTable(audits []entities.AuditResult) {
 		if len(issues) == 0 {
 			continue
 		}
-		fmt.Printf("\n  %s (%d):\n", a.Repository.Name, len(issues))
+		fmt.Fprintf(os.Stdout, "\n  %s (%d):\n", a.Repository.Name, len(issues))
 		for _, issue := range issues {
-			fmt.Printf("    - %s\n", issue)
+			fmt.Fprintf(os.Stdout, "    - %s\n", issue)
 		}
 	}
-	fmt.Printf("\nTotal non-compliant: %d/%d\n", nonCompliant, total)
+	fmt.Fprintf(os.Stdout, "\nTotal non-compliant: %d/%d\n", nonCompliant, len(audits))
 }
 
 func countNonCompliant(audits []entities.AuditResult) int {
@@ -401,8 +475,9 @@ func saveSnapshot(audits []entities.AuditResult, path string) {
 
 	encoder := json.NewEncoder(f)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(audits); err != nil {
-		logger.WithError(err).WithField("path", path).Warn("encoding snapshot")
+	//nolint:musttag // AuditResult is a framework-agnostic entity; json tags belong on infrastructure DTOs only
+	if encodeErr := encoder.Encode(audits); encodeErr != nil {
+		logger.WithError(encodeErr).WithField("path", path).Warn("encoding snapshot")
 		return
 	}
 	logger.WithField("path", path).Info("audit saved")
@@ -416,8 +491,9 @@ func loadSnapshot(path string) ([]entities.AuditResult, error) {
 	defer func() { _ = f.Close() }()
 
 	var audits []entities.AuditResult
-	if err := json.NewDecoder(f).Decode(&audits); err != nil {
-		return nil, err
+	//nolint:musttag // AuditResult is a framework-agnostic entity; json tags belong on infrastructure DTOs only
+	if decodeErr := json.NewDecoder(f).Decode(&audits); decodeErr != nil {
+		return nil, decodeErr
 	}
 	return audits, nil
 }

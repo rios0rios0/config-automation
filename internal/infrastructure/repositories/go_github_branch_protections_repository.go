@@ -31,7 +31,10 @@ var _ repositories.BranchProtectionsRepository = (*GoGithubBranchProtectionsRepo
 // signals that the endpoint returned 403 (plan or permission) or 404
 // (no branch, no protection) — the command layer uses this to skip the
 // repo rather than error out.
-func (r GoGithubBranchProtectionsRepository) FindProtectionByBranch(ctx context.Context, owner, name, branch string) (entities.BranchProtection, error) {
+func (r GoGithubBranchProtectionsRepository) FindProtectionByBranch(
+	ctx context.Context,
+	owner, name, branch string,
+) (entities.BranchProtection, error) {
 	protection, _, err := r.client.Repositories.GetBranchProtection(ctx, owner, name, branch)
 	if err != nil {
 		if isStatusCode(err, http.StatusForbidden) || isUpgradeRequired(err) {
@@ -47,36 +50,43 @@ func (r GoGithubBranchProtectionsRepository) FindProtectionByBranch(ctx context.
 		Available: true,
 		Enabled:   true,
 	}
-
-	if protection != nil {
-		if protection.RequiredPullRequestReviews != nil {
-			state.ReviewCount = protection.RequiredPullRequestReviews.RequiredApprovingReviewCount
-			state.DismissStaleReviews = protection.RequiredPullRequestReviews.DismissStaleReviews
-			state.RequireCodeOwners = protection.RequiredPullRequestReviews.RequireCodeOwnerReviews
-		}
-		if protection.EnforceAdmins != nil {
-			state.EnforceAdmins = protection.EnforceAdmins.Enabled
-		}
-		if protection.RequireLinearHistory != nil {
-			state.LinearHistory = protection.RequireLinearHistory.Enabled
-		}
-		if protection.AllowForcePushes != nil {
-			state.AllowForcePushes = protection.AllowForcePushes.Enabled
-		}
-		if protection.AllowDeletions != nil {
-			state.AllowDeletions = protection.AllowDeletions.Enabled
-		}
-		if protection.RequiredConversationResolution != nil {
-			state.ConversationResolution = protection.RequiredConversationResolution.Enabled
-		}
-	}
-
+	applyProtectionFields(&state, protection)
 	state.Signatures = r.findRequiredSignatures(ctx, owner, name, branch)
 	return state, nil
 }
 
+func applyProtectionFields(state *entities.BranchProtection, protection *github.Protection) {
+	if protection == nil {
+		return
+	}
+	if protection.RequiredPullRequestReviews != nil {
+		state.ReviewCount = protection.RequiredPullRequestReviews.RequiredApprovingReviewCount
+		state.DismissStaleReviews = protection.RequiredPullRequestReviews.DismissStaleReviews
+		state.RequireCodeOwners = protection.RequiredPullRequestReviews.RequireCodeOwnerReviews
+	}
+	if protection.EnforceAdmins != nil {
+		state.EnforceAdmins = protection.EnforceAdmins.Enabled
+	}
+	if protection.RequireLinearHistory != nil {
+		state.LinearHistory = protection.RequireLinearHistory.Enabled
+	}
+	if protection.AllowForcePushes != nil {
+		state.AllowForcePushes = protection.AllowForcePushes.Enabled
+	}
+	if protection.AllowDeletions != nil {
+		state.AllowDeletions = protection.AllowDeletions.Enabled
+	}
+	if protection.RequiredConversationResolution != nil {
+		state.ConversationResolution = protection.RequiredConversationResolution.Enabled
+	}
+}
+
 // SaveProtection PUTs the classic branch protection body.
-func (r GoGithubBranchProtectionsRepository) SaveProtection(ctx context.Context, owner, name, branch string, state entities.BranchProtection) error {
+func (r GoGithubBranchProtectionsRepository) SaveProtection(
+	ctx context.Context,
+	owner, name, branch string,
+	state entities.BranchProtection,
+) error {
 	request := &github.ProtectionRequest{
 		RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 			DismissStaleReviews:          state.DismissStaleReviews,
@@ -94,7 +104,10 @@ func (r GoGithubBranchProtectionsRepository) SaveProtection(ctx context.Context,
 }
 
 // EnableRequiredSignatures calls the dedicated endpoint.
-func (r GoGithubBranchProtectionsRepository) EnableRequiredSignatures(ctx context.Context, owner, name, branch string) error {
+func (r GoGithubBranchProtectionsRepository) EnableRequiredSignatures(
+	ctx context.Context,
+	owner, name, branch string,
+) error {
 	_, _, err := r.client.Repositories.RequireSignaturesOnProtectedBranch(ctx, owner, name, branch)
 	return err
 }
@@ -102,7 +115,10 @@ func (r GoGithubBranchProtectionsRepository) EnableRequiredSignatures(ctx contex
 // FindRulesetByName paginates rulesets for the repo and returns the one
 // matching `rulesetName`, or nil when none matches. The returned
 // ruleset is populated with enough fields to judge compliance.
-func (r GoGithubBranchProtectionsRepository) FindRulesetByName(ctx context.Context, owner, name, rulesetName string) (*entities.Ruleset, error) {
+func (r GoGithubBranchProtectionsRepository) FindRulesetByName(
+	ctx context.Context,
+	owner, name, rulesetName string,
+) (*entities.Ruleset, error) {
 	list, _, err := r.client.Repositories.GetAllRulesets(ctx, owner, name, false)
 	if err != nil {
 		return nil, err
@@ -116,24 +132,31 @@ func (r GoGithubBranchProtectionsRepository) FindRulesetByName(ctx context.Conte
 		if rs.ID != nil {
 			id = *rs.ID
 		}
-		detail, _, err := r.client.Repositories.GetRuleset(ctx, owner, name, id, false)
-		if err != nil {
-			return nil, err
+		detail, _, detailErr := r.client.Repositories.GetRuleset(ctx, owner, name, id, false)
+		if detailErr != nil {
+			return nil, detailErr
 		}
 		entity := mapRulesetToEntity(detail)
 		return &entity, nil
 	}
-	return nil, nil
+	return nil, repositories.ErrRulesetNotFound
 }
 
 // CreateRuleset posts the canonical policy ruleset.
-func (r GoGithubBranchProtectionsRepository) CreateRuleset(ctx context.Context, owner, name string, ruleset entities.Ruleset) error {
+func (r GoGithubBranchProtectionsRepository) CreateRuleset(
+	ctx context.Context,
+	owner, name string,
+	ruleset entities.Ruleset,
+) error {
 	body := buildRulesetRequest(ruleset)
 	_, _, err := r.client.Repositories.CreateRuleset(ctx, owner, name, body)
 	return err
 }
 
-func (r GoGithubBranchProtectionsRepository) findRequiredSignatures(ctx context.Context, owner, name, branch string) *bool {
+func (r GoGithubBranchProtectionsRepository) findRequiredSignatures(
+	ctx context.Context,
+	owner, name, branch string,
+) *bool {
 	sig, _, err := r.client.Repositories.GetSignaturesProtectedBranch(ctx, owner, name, branch)
 	if err != nil {
 		return nil
@@ -148,7 +171,6 @@ func mapRulesetToEntity(rs *github.Ruleset) entities.Ruleset {
 	if rs == nil {
 		return entities.Ruleset{}
 	}
-
 	entity := entities.Ruleset{
 		Name:        rs.Name,
 		Enforcement: rs.Enforcement,
@@ -156,35 +178,43 @@ func mapRulesetToEntity(rs *github.Ruleset) entities.Ruleset {
 	if rs.ID != nil {
 		entity.ID = *rs.ID
 	}
+	entity.AdminBypass = hasAdminBypass(rs.BypassActors)
+	entity.HasNonFastForward = hasNonFastForwardRule(rs.Rules)
+	entity.TargetsMain = targetsMain(rs.Conditions)
+	return entity
+}
 
-	for _, actor := range rs.BypassActors {
+func hasAdminBypass(actors []*github.BypassActor) bool {
+	for _, actor := range actors {
 		if actor == nil || actor.ActorType == nil || actor.ActorID == nil {
 			continue
 		}
 		if *actor.ActorType == entities.RepositoryAdminActorType && *actor.ActorID == entities.RepositoryAdminActorID {
-			entity.AdminBypass = true
+			return true
 		}
 	}
+	return false
+}
 
-	for _, rule := range rs.Rules {
-		if rule == nil {
-			continue
-		}
-		if rule.Type == "non_fast_forward" {
-			entity.HasNonFastForward = true
-		}
-	}
-
-	if rs.Conditions != nil && rs.Conditions.RefName != nil {
-		for _, include := range rs.Conditions.RefName.Include {
-			if include == "refs/heads/main" || include == "~DEFAULT_BRANCH" {
-				entity.TargetsMain = true
-				break
-			}
+func hasNonFastForwardRule(rules []*github.RepositoryRule) bool {
+	for _, rule := range rules {
+		if rule != nil && rule.Type == "non_fast_forward" {
+			return true
 		}
 	}
+	return false
+}
 
-	return entity
+func targetsMain(conditions *github.RulesetConditions) bool {
+	if conditions == nil || conditions.RefName == nil {
+		return false
+	}
+	for _, include := range conditions.RefName.Include {
+		if include == "refs/heads/main" || include == "~DEFAULT_BRANCH" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildRulesetRequest(ruleset entities.Ruleset) *github.Ruleset {

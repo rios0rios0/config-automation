@@ -33,89 +33,118 @@ func (a AuditResult) ComputeIssues() []string {
 		return []string{fmt.Sprintf("audit_error: %s", a.AuditError)}
 	}
 
-	issues := []string{}
-	name := a.Repository.Name
-	isFork := a.Repository.Fork
-	isPrivate := a.Repository.Private
-	settings := a.Repository.Settings
+	issues := a.repoSettingsIssues()
 
-	// Repo settings: apply the policy per field, honoring carve-outs.
-	policy := DesiredRepoSettings
-	issues = append(issues, checkSetting("delete_branch_on_merge", settings.DeleteBranchOnMerge, policy.DeleteBranchOnMerge, false)...)
-	// allow_auto_merge is a Team feature; GitHub Free silently ignores the
-	// PATCH on private repos, so only skip that specific unfixable case.
-	skipAutoMerge := isPrivate && policy.AllowAutoMerge && !settings.AllowAutoMerge
-	if !skipAutoMerge {
-		issues = append(issues, checkSetting("allow_auto_merge", settings.AllowAutoMerge, policy.AllowAutoMerge, false)...)
-	}
-	issues = append(issues, checkSetting("allow_squash_merge", settings.AllowSquashMerge, policy.AllowSquashMerge, false)...)
-	issues = append(issues, checkSetting("allow_rebase_merge", settings.AllowRebaseMerge, policy.AllowRebaseMerge, false)...)
-	issues = append(issues, checkSetting("allow_merge_commit", settings.AllowMergeCommit, policy.AllowMergeCommit, false)...)
-
-	_, wikiAllowed := DesiredWikiAllowlist[name]
-	if !wikiAllowed {
-		issues = append(issues, checkSetting("has_wiki", settings.HasWiki, policy.HasWiki, false)...)
-	}
-	issues = append(issues, checkSetting("has_projects", settings.HasProjects, policy.HasProjects, false)...)
-
-	// Dependabot: skipped for forks.
-	if !isFork {
-		switch a.Security.DependabotAlertsState() {
-		case "unknown":
-			issues = append(issues, "dependabot_alerts=unknown")
-		case "disabled":
-			issues = append(issues, "dependabot_alerts=off")
-		}
-		if !a.Security.DependabotUpdates {
-			issues = append(issues, "dependabot_updates=off")
-		}
+	if !a.Repository.Fork {
+		issues = append(issues, a.dependabotIssues()...)
 	}
 
 	// Public-only enforcement: secret scanning, branch protection, ruleset.
-	if isPrivate || !a.BranchProtection.Available {
+	if a.Repository.Private || !a.BranchProtection.Available {
 		return issues
 	}
 
-	if !isFork {
-		if !a.Security.IsSecretScanningEnabled() {
-			issues = append(issues, fmt.Sprintf("secret_scanning=%s", stateOrEmpty(a.Security.SecretScanning)))
-		}
-		if !a.Security.IsPushProtectionEnabled() {
-			issues = append(issues, fmt.Sprintf("push_protection=%s", stateOrEmpty(a.Security.PushProtection)))
-		}
+	if !a.Repository.Fork {
+		issues = append(issues, a.secretScanningIssues()...)
 	}
 
+	issues = append(issues, a.branchProtectionIssues()...)
+	issues = append(issues, a.rulesetIssues()...)
+	return issues
+}
+
+func (a AuditResult) repoSettingsIssues() []string {
+	settings := a.Repository.Settings
+	policy := DesiredRepoSettings()
+	issues := []string{}
+
+	issues = append(
+		issues,
+		checkSetting("delete_branch_on_merge", settings.DeleteBranchOnMerge, policy.DeleteBranchOnMerge, false)...)
+	// allow_auto_merge is a Team feature; GitHub Free silently ignores the
+	// PATCH on private repos, so only skip that specific unfixable case.
+	skipAutoMerge := a.Repository.Private && policy.AllowAutoMerge && !settings.AllowAutoMerge
+	if !skipAutoMerge {
+		issues = append(
+			issues,
+			checkSetting("allow_auto_merge", settings.AllowAutoMerge, policy.AllowAutoMerge, false)...)
+	}
+	issues = append(
+		issues,
+		checkSetting("allow_squash_merge", settings.AllowSquashMerge, policy.AllowSquashMerge, false)...)
+	issues = append(
+		issues,
+		checkSetting("allow_rebase_merge", settings.AllowRebaseMerge, policy.AllowRebaseMerge, false)...)
+	issues = append(
+		issues,
+		checkSetting("allow_merge_commit", settings.AllowMergeCommit, policy.AllowMergeCommit, false)...)
+
+	if _, wikiAllowed := DesiredWikiAllowlist()[a.Repository.Name]; !wikiAllowed {
+		issues = append(issues, checkSetting("has_wiki", settings.HasWiki, policy.HasWiki, false)...)
+	}
+	issues = append(issues, checkSetting("has_projects", settings.HasProjects, policy.HasProjects, false)...)
+	return issues
+}
+
+func (a AuditResult) dependabotIssues() []string {
+	issues := []string{}
+	switch a.Security.DependabotAlertsState() {
+	case SecurityStateUnknown:
+		issues = append(issues, "dependabot_alerts=unknown")
+	case SecurityStateDisabled:
+		issues = append(issues, "dependabot_alerts=off")
+	}
+	if !a.Security.DependabotUpdates {
+		issues = append(issues, "dependabot_updates=off")
+	}
+	return issues
+}
+
+func (a AuditResult) secretScanningIssues() []string {
+	issues := []string{}
+	if !a.Security.IsSecretScanningEnabled() {
+		issues = append(issues, fmt.Sprintf("secret_scanning=%s", stateOrEmpty(a.Security.SecretScanning)))
+	}
+	if !a.Security.IsPushProtectionEnabled() {
+		issues = append(issues, fmt.Sprintf("push_protection=%s", stateOrEmpty(a.Security.PushProtection)))
+	}
+	return issues
+}
+
+func (a AuditResult) branchProtectionIssues() []string {
 	if !a.BranchProtection.Enabled {
-		issues = append(issues, "branch_protection=off")
-	} else {
-		if a.BranchProtection.ReviewCount != DesiredReviewCount {
-			issues = append(issues, fmt.Sprintf("prot_review_count=%d", a.BranchProtection.ReviewCount))
-		}
-		if !a.BranchProtection.DismissStaleReviews {
-			issues = append(issues, "prot_dismiss_stale=off")
-		}
-		if !a.BranchProtection.ConversationResolution {
-			issues = append(issues, "prot_conversation_resolution=off")
-		}
-		if a.BranchProtection.Signatures == nil || !*a.BranchProtection.Signatures {
-			issues = append(issues, "prot_signatures=off")
-		}
+		return []string{"branch_protection=off"}
 	}
+	issues := []string{}
+	if a.BranchProtection.ReviewCount != DesiredReviewCount {
+		issues = append(issues, fmt.Sprintf("prot_review_count=%d", a.BranchProtection.ReviewCount))
+	}
+	if !a.BranchProtection.DismissStaleReviews {
+		issues = append(issues, "prot_dismiss_stale=off")
+	}
+	if !a.BranchProtection.ConversationResolution {
+		issues = append(issues, "prot_conversation_resolution=off")
+	}
+	if a.BranchProtection.Signatures == nil || !*a.BranchProtection.Signatures {
+		issues = append(issues, "prot_signatures=off")
+	}
+	return issues
+}
 
+func (a AuditResult) rulesetIssues() []string {
 	if a.Ruleset == nil {
-		issues = append(issues, "ruleset_non_fast_forward=missing")
-	} else {
-		if !a.Ruleset.HasNonFastForward {
-			issues = append(issues, "ruleset_non_fast_forward=rule_missing")
-		}
-		if !a.Ruleset.TargetsMain {
-			issues = append(issues, "ruleset_targets_main=missing")
-		}
-		if !a.Ruleset.AdminBypass {
-			issues = append(issues, "ruleset_admin_bypass=missing")
-		}
+		return []string{"ruleset_non_fast_forward=missing"}
 	}
-
+	issues := []string{}
+	if !a.Ruleset.HasNonFastForward {
+		issues = append(issues, "ruleset_non_fast_forward=rule_missing")
+	}
+	if !a.Ruleset.TargetsMain {
+		issues = append(issues, "ruleset_targets_main=missing")
+	}
+	if !a.Ruleset.AdminBypass {
+		issues = append(issues, "ruleset_admin_bypass=missing")
+	}
 	return issues
 }
 

@@ -17,7 +17,9 @@ type ApplySecuritySettingsCommand struct {
 }
 
 // NewApplySecuritySettingsCommand is the Dig-injectable constructor.
-func NewApplySecuritySettingsCommand(securityRepo repositories.SecuritySettingsRepository) *ApplySecuritySettingsCommand {
+func NewApplySecuritySettingsCommand(
+	securityRepo repositories.SecuritySettingsRepository,
+) *ApplySecuritySettingsCommand {
 	return &ApplySecuritySettingsCommand{securityRepo: securityRepo}
 }
 
@@ -60,77 +62,115 @@ func (c ApplySecuritySettingsCommand) Execute(
 		if audit.AuditError != "" {
 			continue
 		}
-
-		repo := audit.Repository
-
-		if repo.Fork {
+		if audit.Repository.Fork {
 			if listeners.OnSkip != nil {
-				listeners.OnSkip(repo.Name, "fork")
+				listeners.OnSkip(audit.Repository.Name, "fork")
 			}
 			continue
 		}
-
-		// Secret scanning: public-only.
-		if !repo.Private && !audit.Security.IsSecretScanningEnabled() {
-			change := ApplySecuritySettingsChange{RepositoryName: repo.Name, Action: "secret_scanning"}
-			if input.DryRun {
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			} else {
-				if err := c.securityRepo.EnableSecretScanning(ctx, input.Owner, repo.Name); err != nil {
-					listeners.OnError(repo.Name, fmt.Errorf("enabling secret scanning: %w", err))
-					continue
-				}
-				change.Applied = true
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			}
-			secretScanningChanges++
-		}
-
-		// Dependabot alerts: all non-fork repos.
-		alerts := audit.Security.DependabotAlerts
-		if alerts == nil || !*alerts {
-			change := ApplySecuritySettingsChange{RepositoryName: repo.Name, Action: "dependabot_alerts"}
-			if input.DryRun {
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			} else {
-				if err := c.securityRepo.EnableVulnerabilityAlerts(ctx, input.Owner, repo.Name); err != nil {
-					listeners.OnError(repo.Name, fmt.Errorf("enabling vulnerability alerts: %w", err))
-					continue
-				}
-				change.Applied = true
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			}
-			dependabotChanges++
-		}
-
-		// Dependabot automated security fixes: all non-fork repos.
-		if !audit.Security.DependabotUpdates {
-			change := ApplySecuritySettingsChange{RepositoryName: repo.Name, Action: "dependabot_updates"}
-			if input.DryRun {
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			} else {
-				if err := c.securityRepo.EnableAutomatedSecurityFixes(ctx, input.Owner, repo.Name); err != nil {
-					listeners.OnError(repo.Name, fmt.Errorf("enabling automated security fixes: %w", err))
-					continue
-				}
-				change.Applied = true
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			}
-			dependabotChanges++
-		}
+		secret, dependabot := c.applyOne(ctx, input, audit, listeners)
+		secretScanningChanges += secret
+		dependabotChanges += dependabot
 	}
 
 	listeners.OnSuccess(secretScanningChanges, dependabotChanges)
+}
+
+// applyOne runs the three security sub-applications for one audit.
+// Matching the original `continue`-on-error semantics, any sub-step
+// that errors aborts the remaining sub-steps for this repo.
+func (c ApplySecuritySettingsCommand) applyOne(
+	ctx context.Context,
+	input ApplySecuritySettingsInput,
+	audit entities.AuditResult,
+	listeners ApplySecuritySettingsListeners,
+) (int, int) {
+	secret := 0
+	dependabot := 0
+	if !audit.Repository.Private && !audit.Security.IsSecretScanningEnabled() {
+		if !c.applySecretScanning(ctx, input, audit, listeners) {
+			return secret, dependabot
+		}
+		secret++
+	}
+	alerts := audit.Security.DependabotAlerts
+	if alerts == nil || !*alerts {
+		if !c.applyDependabotAlerts(ctx, input, audit, listeners) {
+			return secret, dependabot
+		}
+		dependabot++
+	}
+	if !audit.Security.DependabotUpdates {
+		if !c.applyDependabotUpdates(ctx, input, audit, listeners) {
+			return secret, dependabot
+		}
+		dependabot++
+	}
+	return secret, dependabot
+}
+
+func (c ApplySecuritySettingsCommand) applySecretScanning(
+	ctx context.Context,
+	input ApplySecuritySettingsInput,
+	audit entities.AuditResult,
+	listeners ApplySecuritySettingsListeners,
+) bool {
+	change := ApplySecuritySettingsChange{RepositoryName: audit.Repository.Name, Action: "secret_scanning"}
+	if input.DryRun {
+		emitSecurityChange(listeners.OnChange, change)
+		return true
+	}
+	if err := c.securityRepo.EnableSecretScanning(ctx, input.Owner, audit.Repository.Name); err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("enabling secret scanning: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitSecurityChange(listeners.OnChange, change)
+	return true
+}
+
+func (c ApplySecuritySettingsCommand) applyDependabotAlerts(
+	ctx context.Context,
+	input ApplySecuritySettingsInput,
+	audit entities.AuditResult,
+	listeners ApplySecuritySettingsListeners,
+) bool {
+	change := ApplySecuritySettingsChange{RepositoryName: audit.Repository.Name, Action: "dependabot_alerts"}
+	if input.DryRun {
+		emitSecurityChange(listeners.OnChange, change)
+		return true
+	}
+	if err := c.securityRepo.EnableVulnerabilityAlerts(ctx, input.Owner, audit.Repository.Name); err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("enabling vulnerability alerts: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitSecurityChange(listeners.OnChange, change)
+	return true
+}
+
+func (c ApplySecuritySettingsCommand) applyDependabotUpdates(
+	ctx context.Context,
+	input ApplySecuritySettingsInput,
+	audit entities.AuditResult,
+	listeners ApplySecuritySettingsListeners,
+) bool {
+	change := ApplySecuritySettingsChange{RepositoryName: audit.Repository.Name, Action: "dependabot_updates"}
+	if input.DryRun {
+		emitSecurityChange(listeners.OnChange, change)
+		return true
+	}
+	if err := c.securityRepo.EnableAutomatedSecurityFixes(ctx, input.Owner, audit.Repository.Name); err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("enabling automated security fixes: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitSecurityChange(listeners.OnChange, change)
+	return true
+}
+
+func emitSecurityChange(cb func(change ApplySecuritySettingsChange), change ApplySecuritySettingsChange) {
+	if cb != nil {
+		cb(change)
+	}
 }

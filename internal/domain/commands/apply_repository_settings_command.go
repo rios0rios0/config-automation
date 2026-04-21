@@ -12,11 +12,11 @@ import (
 // non-compliant repo settings, patch the repo to match the policy. Fork
 // and allowlist carve-outs mirror AuditResult.ComputeIssues().
 type ApplyRepositorySettingsCommand struct {
-	reposRepo repositories.RepositoriesRepository
+	reposRepo repositories.Repository
 }
 
 // NewApplyRepositorySettingsCommand is the Dig-injectable constructor.
-func NewApplyRepositorySettingsCommand(reposRepo repositories.RepositoriesRepository) *ApplyRepositorySettingsCommand {
+func NewApplyRepositorySettingsCommand(reposRepo repositories.Repository) *ApplyRepositorySettingsCommand {
 	return &ApplyRepositorySettingsCommand{reposRepo: reposRepo}
 }
 
@@ -95,7 +95,7 @@ func (c ApplyRepositorySettingsCommand) Execute(
 }
 
 func buildDesiredSettings(audit entities.AuditResult) entities.RepositorySettings {
-	desired := entities.DesiredRepoSettings
+	desired := entities.DesiredRepoSettings()
 
 	// allow_auto_merge is a GitHub Team feature. The API silently ignores
 	// PATCH attempts on GitHub Free for private repos, so leave the
@@ -105,7 +105,7 @@ func buildDesiredSettings(audit entities.AuditResult) entities.RepositorySetting
 		desired.AllowAutoMerge = audit.Repository.Settings.AllowAutoMerge
 	}
 
-	if _, ok := entities.DesiredWikiAllowlist[audit.Repository.Name]; ok {
+	if _, ok := entities.DesiredWikiAllowlist()[audit.Repository.Name]; ok {
 		desired.HasWiki = audit.Repository.Settings.HasWiki
 	}
 

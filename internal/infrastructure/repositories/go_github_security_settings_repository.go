@@ -32,7 +32,10 @@ var _ repositories.SecuritySettingsRepository = (*GoGithubSecuritySettingsReposi
 // FindByRepositoryName builds the full SecuritySettings for a repo:
 // secret scanning + push protection from the detail payload, plus
 // Dependabot alerts and automated security fixes from their endpoints.
-func (r GoGithubSecuritySettingsRepository) FindByRepositoryName(ctx context.Context, repo entities.Repository) (entities.SecuritySettings, error) {
+func (r GoGithubSecuritySettingsRepository) FindByRepositoryName(
+	ctx context.Context,
+	repo entities.Repository,
+) (entities.SecuritySettings, error) {
 	detail, _, err := r.client.Repositories.Get(ctx, repo.Owner, repo.Name)
 	if err != nil {
 		return entities.SecuritySettings{}, err
@@ -43,7 +46,8 @@ func (r GoGithubSecuritySettingsRepository) FindByRepositoryName(ctx context.Con
 		if detail.SecurityAndAnalysis.SecretScanning != nil && detail.SecurityAndAnalysis.SecretScanning.Status != nil {
 			settings.SecretScanning = *detail.SecurityAndAnalysis.SecretScanning.Status
 		}
-		if detail.SecurityAndAnalysis.SecretScanningPushProtection != nil && detail.SecurityAndAnalysis.SecretScanningPushProtection.Status != nil {
+		if detail.SecurityAndAnalysis.SecretScanningPushProtection != nil &&
+			detail.SecurityAndAnalysis.SecretScanningPushProtection.Status != nil {
 			settings.PushProtection = *detail.SecurityAndAnalysis.SecretScanningPushProtection.Status
 		}
 	}
@@ -70,7 +74,10 @@ func (r GoGithubSecuritySettingsRepository) EnableVulnerabilityAlerts(ctx contex
 }
 
 // EnableAutomatedSecurityFixes turns on automated security fixes.
-func (r GoGithubSecuritySettingsRepository) EnableAutomatedSecurityFixes(ctx context.Context, owner, name string) error {
+func (r GoGithubSecuritySettingsRepository) EnableAutomatedSecurityFixes(
+	ctx context.Context,
+	owner, name string,
+) error {
 	_, err := r.client.Repositories.EnableAutomatedSecurityFixes(ctx, owner, name)
 	return err
 }
@@ -92,7 +99,10 @@ func (r GoGithubSecuritySettingsRepository) EnableSecretScanning(ctx context.Con
 // findVulnerabilityAlerts distinguishes enabled (204) from disabled
 // (404). Any other response is surfaced as an error so the caller can
 // treat DependabotAlerts as nil (unknown).
-func (r GoGithubSecuritySettingsRepository) findVulnerabilityAlerts(ctx context.Context, owner, name string) (bool, error) {
+func (r GoGithubSecuritySettingsRepository) findVulnerabilityAlerts(
+	ctx context.Context,
+	owner, name string,
+) (bool, error) {
 	enabled, resp, err := r.client.Repositories.GetVulnerabilityAlerts(ctx, owner, name)
 	if err != nil {
 		var ghErr *github.ErrorResponse
@@ -109,7 +119,10 @@ func (r GoGithubSecuritySettingsRepository) findVulnerabilityAlerts(ctx context.
 
 // findAutomatedSecurityFixes reads the boolean via the dedicated
 // endpoint.
-func (r GoGithubSecuritySettingsRepository) findAutomatedSecurityFixes(ctx context.Context, owner, name string) (bool, error) {
+func (r GoGithubSecuritySettingsRepository) findAutomatedSecurityFixes(
+	ctx context.Context,
+	owner, name string,
+) (bool, error) {
 	fixes, _, err := r.client.Repositories.GetAutomatedSecurityFixes(ctx, owner, name)
 	if err != nil {
 		return false, err

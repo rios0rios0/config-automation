@@ -17,7 +17,9 @@ type ApplyBranchProtectionCommand struct {
 }
 
 // NewApplyBranchProtectionCommand is the Dig-injectable constructor.
-func NewApplyBranchProtectionCommand(branchProtectionRepo repositories.BranchProtectionsRepository) *ApplyBranchProtectionCommand {
+func NewApplyBranchProtectionCommand(
+	branchProtectionRepo repositories.BranchProtectionsRepository,
+) *ApplyBranchProtectionCommand {
 	return &ApplyBranchProtectionCommand{branchProtectionRepo: branchProtectionRepo}
 }
 
@@ -58,92 +60,147 @@ func (c ApplyBranchProtectionCommand) Execute(
 		if audit.AuditError != "" {
 			continue
 		}
-
-		repo := audit.Repository
-		if repo.Private {
+		if reason := skipReason(audit); reason != "" {
 			if listeners.OnSkip != nil {
-				listeners.OnSkip(repo.Name, "private")
+				listeners.OnSkip(audit.Repository.Name, reason)
 			}
 			skipped++
 			continue
 		}
-		if !audit.BranchProtection.Available {
-			if listeners.OnSkip != nil {
-				listeners.OnSkip(repo.Name, "protection_unavailable")
-			}
-			skipped++
-			continue
-		}
-
-		mutated := false
-
-		// Classic branch protection: always write the desired body; the
-		// repository implementation PUTs the full struct idempotently.
-		if !audit.BranchProtection.Enabled || !isProtectionCompliant(audit.BranchProtection) {
-			change := ApplyBranchProtectionChange{RepositoryName: repo.Name, Action: "branch_protection"}
-			if input.DryRun {
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			} else {
-				if err := c.branchProtectionRepo.SaveProtection(ctx, input.Owner, repo.Name, entities.DesiredDefaultBranch, DesiredBranchProtection()); err != nil {
-					listeners.OnError(repo.Name, fmt.Errorf("saving protection: %w", err))
-					continue
-				}
-				change.Applied = true
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			}
-			mutated = true
-		}
-
-		// Required signatures: separate endpoint.
-		if audit.BranchProtection.Signatures == nil || !*audit.BranchProtection.Signatures {
-			change := ApplyBranchProtectionChange{RepositoryName: repo.Name, Action: "required_signatures"}
-			if input.DryRun {
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			} else {
-				if err := c.branchProtectionRepo.EnableRequiredSignatures(ctx, input.Owner, repo.Name, entities.DesiredDefaultBranch); err != nil {
-					listeners.OnError(repo.Name, fmt.Errorf("enabling required signatures: %w", err))
-					continue
-				}
-				change.Applied = true
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			}
-			mutated = true
-		}
-
-		// Ruleset: create if missing or non-compliant.
-		if audit.Ruleset == nil || !audit.Ruleset.IsCompliant() {
-			change := ApplyBranchProtectionChange{RepositoryName: repo.Name, Action: "ruleset"}
-			if input.DryRun {
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			} else {
-				if err := c.branchProtectionRepo.CreateRuleset(ctx, input.Owner, repo.Name, DesiredRuleset()); err != nil {
-					listeners.OnError(repo.Name, fmt.Errorf("creating ruleset: %w", err))
-					continue
-				}
-				change.Applied = true
-				if listeners.OnChange != nil {
-					listeners.OnChange(change)
-				}
-			}
-			mutated = true
-		}
-
-		if mutated {
+		if c.applyOne(ctx, input, audit, listeners) {
 			changed++
 		}
 	}
 
 	listeners.OnSuccess(changed, skipped)
+}
+
+func skipReason(audit entities.AuditResult) string {
+	switch {
+	case audit.Repository.Private:
+		return "private"
+	case !audit.BranchProtection.Available:
+		return "protection_unavailable"
+	default:
+		return ""
+	}
+}
+
+// applyOne runs the three branch-protection sub-applications for one
+// audit. Any sub-application returning false (error) stops further work
+// for that repo and the repo is not counted as mutated — matching the
+// original `continue`-on-error semantics.
+func (c ApplyBranchProtectionCommand) applyOne(
+	ctx context.Context,
+	input ApplyBranchProtectionInput,
+	audit entities.AuditResult,
+	listeners ApplyBranchProtectionListeners,
+) bool {
+	mutated := false
+	if !audit.BranchProtection.Enabled || !isProtectionCompliant(audit.BranchProtection) {
+		if !c.applyProtection(ctx, input, audit, listeners) {
+			return false
+		}
+		mutated = true
+	}
+	if audit.BranchProtection.Signatures == nil || !*audit.BranchProtection.Signatures {
+		if !c.applySignatures(ctx, input, audit, listeners) {
+			return false
+		}
+		mutated = true
+	}
+	if audit.Ruleset == nil || !audit.Ruleset.IsCompliant() {
+		if !c.applyRuleset(ctx, input, audit, listeners) {
+			return false
+		}
+		mutated = true
+	}
+	return mutated
+}
+
+func (c ApplyBranchProtectionCommand) applyProtection(
+	ctx context.Context,
+	input ApplyBranchProtectionInput,
+	audit entities.AuditResult,
+	listeners ApplyBranchProtectionListeners,
+) bool {
+	change := ApplyBranchProtectionChange{RepositoryName: audit.Repository.Name, Action: "branch_protection"}
+	if input.DryRun {
+		emitChange(listeners.OnChange, change)
+		return true
+	}
+	err := c.branchProtectionRepo.SaveProtection(
+		ctx,
+		input.Owner,
+		audit.Repository.Name,
+		entities.DesiredDefaultBranch,
+		DesiredBranchProtection(),
+	)
+	if err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("saving protection: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitChange(listeners.OnChange, change)
+	return true
+}
+
+func (c ApplyBranchProtectionCommand) applySignatures(
+	ctx context.Context,
+	input ApplyBranchProtectionInput,
+	audit entities.AuditResult,
+	listeners ApplyBranchProtectionListeners,
+) bool {
+	change := ApplyBranchProtectionChange{RepositoryName: audit.Repository.Name, Action: "required_signatures"}
+	if input.DryRun {
+		emitChange(listeners.OnChange, change)
+		return true
+	}
+	err := c.branchProtectionRepo.EnableRequiredSignatures(
+		ctx,
+		input.Owner,
+		audit.Repository.Name,
+		entities.DesiredDefaultBranch,
+	)
+	if err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("enabling required signatures: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitChange(listeners.OnChange, change)
+	return true
+}
+
+func (c ApplyBranchProtectionCommand) applyRuleset(
+	ctx context.Context,
+	input ApplyBranchProtectionInput,
+	audit entities.AuditResult,
+	listeners ApplyBranchProtectionListeners,
+) bool {
+	change := ApplyBranchProtectionChange{RepositoryName: audit.Repository.Name, Action: "ruleset"}
+	if input.DryRun {
+		emitChange(listeners.OnChange, change)
+		return true
+	}
+	err := c.branchProtectionRepo.CreateRuleset(
+		ctx,
+		input.Owner,
+		audit.Repository.Name,
+		DesiredRuleset(),
+	)
+	if err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("creating ruleset: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitChange(listeners.OnChange, change)
+	return true
+}
+
+func emitChange(cb func(change ApplyBranchProtectionChange), change ApplyBranchProtectionChange) {
+	if cb != nil {
+		cb(change)
+	}
 }
 
 // DesiredBranchProtection returns the canonical branch protection body

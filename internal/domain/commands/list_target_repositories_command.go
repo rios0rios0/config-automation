@@ -12,11 +12,11 @@ import (
 // refresh matrix. It filters out forks and archived repos so the
 // weekly refresh only targets live repos.
 type ListTargetRepositoriesCommand struct {
-	reposRepo repositories.RepositoriesRepository
+	reposRepo repositories.Repository
 }
 
 // NewListTargetRepositoriesCommand is the Dig-injectable constructor.
-func NewListTargetRepositoriesCommand(reposRepo repositories.RepositoriesRepository) *ListTargetRepositoriesCommand {
+func NewListTargetRepositoriesCommand(reposRepo repositories.Repository) *ListTargetRepositoriesCommand {
 	return &ListTargetRepositoriesCommand{reposRepo: reposRepo}
 }
 

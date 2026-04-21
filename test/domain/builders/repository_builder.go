@@ -61,7 +61,7 @@ func (b *RepositoryBuilder) WithSettings(settings entities.RepositorySettings) *
 }
 
 func (b *RepositoryBuilder) WithCompliantSettings() *RepositoryBuilder {
-	b.repo.Settings = entities.DesiredRepoSettings
+	b.repo.Settings = entities.DesiredRepoSettings()
 	return b
 }
 
