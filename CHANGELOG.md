@@ -16,12 +16,6 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
-### Fixed
-
-- fixed `scripts/harden_repos.py` writing audit snapshots to a hardcoded `/tmp/` path that fails on hosts where `/tmp` is not writable (Termux, some sandboxes); the script now derives the path from `tempfile.gettempdir()`, which honors `TMPDIR` and still resolves to `/tmp` on Ubuntu runners so CI artifact paths are unchanged
-
-## [1.0.0] - 2026-04-21
-
 ### Added
 
 - added `.github/workflows/repo-compliance-audit.yaml`, the daily scheduled workflow that runs `scripts/harden_repos.py --phase 1 --fail-on-noncompliant` and fails CI when any `rios0rios0` repo drifts from the compliance policy (migrated from `rios0rios0/.github`)
@@ -36,3 +30,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 - expanded the `anthropics/claude-code-action@v1` allowlist in `ai-docs-refresh.yaml` to include `Edit(/CHANGELOG.md)` and `Write(/CHANGELOG.md)` so Claude can record every AI-docs refresh in the target repo's changelog
 - updated `scripts/refresh_ai_docs_prompt.md` to require Claude to add a short `[Unreleased]` entry to the target repo's `CHANGELOG.md` whenever it edits `CLAUDE.md` or `.github/copilot-instructions.md`, and to skip the entry when the target repo has no changelog
 - widened the drift-detection step in `ai-docs-refresh.yaml` to stage `CHANGELOG.md` alongside the AI-docs files while keeping the diff gate scoped to the AI docs, so a stray CHANGELOG-only edit cannot open a spurious PR
+
+### Fixed
+
+- fixed `scripts/harden_repos.py` writing audit snapshots to a hardcoded `/tmp/` path that fails on hosts where `/tmp` is not writable (Termux, some sandboxes); the script now derives the path from `tempfile.gettempdir()`, which honors `TMPDIR` and still resolves to `/tmp` on Ubuntu runners so CI artifact paths are unchanged
