@@ -21,11 +21,18 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 OWNER = os.environ.get("HARDEN_OWNER", "rios0rios0")
 GH = os.environ.get("GH_BIN", "gh")
 DEFAULT_BRANCH = "main"
+
+# Honor TMPDIR (via tempfile.gettempdir()) so the script runs on hosts where
+# /tmp isn't writable (Termux, some sandboxes). On Ubuntu runners this still
+# resolves to /tmp, so CI artifact paths don't change.
+AUDIT_BEFORE_PATH = os.path.join(tempfile.gettempdir(), "gh_hardening_audit_before.json")
+AUDIT_AFTER_PATH = os.path.join(tempfile.gettempdir(), "gh_hardening_audit_after.json")
 
 REPO_SETTINGS = {
     "delete_branch_on_merge": True,
@@ -493,10 +500,9 @@ def phase1_audit(repo_filter=None):
     print("\r" + " " * 80)
     print_audit_table(audits)
 
-    out_path = "/tmp/gh_hardening_audit_before.json"
-    with open(out_path, "w") as f:
+    with open(AUDIT_BEFORE_PATH, "w") as f:
         json.dump(audits, f, indent=2)
-    print(f"\nAudit saved to {out_path}")
+    print(f"\nAudit saved to {AUDIT_BEFORE_PATH}")
 
     return audits
 
@@ -735,7 +741,7 @@ def phase5_report(repo_filter=None):
     print("Phase 5: Re-auditing and generating comparison report...")
 
     try:
-        with open("/tmp/gh_hardening_audit_before.json") as f:
+        with open(AUDIT_BEFORE_PATH) as f:
             before = {a["name"]: a for a in json.load(f)}
     except FileNotFoundError:
         print("ERROR: No before audit found. Run --phase 1 first.")
@@ -756,7 +762,7 @@ def phase5_report(repo_filter=None):
 
     after = {a["name"]: a for a in after_list}
 
-    with open("/tmp/gh_hardening_audit_after.json", "w") as f:
+    with open(AUDIT_AFTER_PATH, "w") as f:
         json.dump(after_list, f, indent=2)
 
     print("\n=== CHANGES REPORT ===\n")
@@ -789,7 +795,7 @@ def phase5_report(repo_filter=None):
     print(f"\n=== FINAL STATUS ===\n")
     print_audit_table(after_list)
     print(f"\nRepos changed: {repos_changed}/{len(after_list)}")
-    print(f"After audit saved to /tmp/gh_hardening_audit_after.json")
+    print(f"After audit saved to {AUDIT_AFTER_PATH}")
 
 
 def main():

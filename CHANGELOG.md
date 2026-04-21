@@ -16,6 +16,10 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Fixed
+
+- fixed `scripts/harden_repos.py` writing audit snapshots to a hardcoded `/tmp/` path that fails on hosts where `/tmp` is not writable (Termux, some sandboxes); the script now derives the path from `tempfile.gettempdir()`, which honors `TMPDIR` and still resolves to `/tmp` on Ubuntu runners so CI artifact paths are unchanged
+
 ## [1.0.0] - 2026-04-21
 
 ### Added
