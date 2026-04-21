@@ -37,50 +37,82 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN -R rios0rios0/fleet-maintenance
 
 Both workflows run on cron; no manual action is needed in steady state.
 
-To trigger a single repo refresh manually (useful for testing):
+Manual trigger — one-off AI docs refresh against a single repo:
 
 ```bash
 gh workflow run ai-docs-refresh.yaml -R rios0rios0/fleet-maintenance -f repo=autobump
 ```
 
-To run the compliance audit on demand:
+Manual trigger — compliance audit on demand:
 
 ```bash
 gh workflow run repo-compliance-audit.yaml -R rios0rios0/fleet-maintenance
 ```
 
-To apply remediation phases 2–4 of `harden_repos.py` (repo settings, security features, branch protection) against a single repo locally:
+Locally, the CLI supports the full phase model:
 
 ```bash
-HARDEN_OWNER=rios0rios0 python3 scripts/harden_repos.py --phase 2 --repo <repo>
-HARDEN_OWNER=rios0rios0 python3 scripts/harden_repos.py --phase 3 --repo <repo>
-HARDEN_OWNER=rios0rios0 python3 scripts/harden_repos.py --phase 4 --repo <repo>
-```
+# Audit-only (read-only, writes /tmp/gh_hardening_audit_before.json)
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 1
 
-`--dry-run` previews phases 1–4 without mutating anything.
+# Apply phases locally (mutates)
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 2 --repo <name>
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 3 --repo <name>
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 4 --repo <name>
+
+# Preview every phase without mutating anything
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --dry-run
+
+# List target repos for the AI docs matrix (JSON on stdout)
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --list-json
+
+# Re-audit and diff against the before snapshot
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 5
+```
 
 ## Architecture
 
 ```
 fleet-maintenance/
-├── .github/
-│   └── workflows/
-│       ├── repo-compliance-audit.yaml    # daily cron -> harden_repos.py --phase 1
-│       └── ai-docs-refresh.yaml          # weekly cron -> anthropics/claude-code-action@v1
+├── cmd/
+│   └── harden-repos/               # CLI entry point + Dig wiring
+├── internal/
+│   ├── container.go                # top-level DI orchestrator
+│   ├── domain/
+│   │   ├── commands/               # one command per phase + --list-json + --dry-run
+│   │   ├── entities/               # Repository, AuditResult, ComplianceIssue, etc.
+│   │   └── repositories/           # three port interfaces (repos, security, branch protection)
+│   └── infrastructure/
+│       └── repositories/           # go-github adapters that implement the ports
+├── test/
+│   └── domain/
+│       ├── builders/               # RepositoryBuilder, AuditResultBuilder
+│       └── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
+├── .github/workflows/              # two scheduled workflows that run this CLI
 └── scripts/
-    ├── harden_repos.py                   # pure Python 3.12 + gh CLI; 5-phase model
-    └── refresh_ai_docs_prompt.md         # prompt consumed by the refresh workflow
+    └── refresh_ai_docs_prompt.md   # prompt consumed by the AI docs refresh workflow
 ```
 
-`harden_repos.py` implements a 5-phase model:
+The CLI follows the 5-phase compliance model:
 
-- **Phase 1** — read-only audit, writes `/tmp/gh_hardening_audit_before.json`; with `--fail-on-noncompliant` exits non-zero when any repo violates policy.
-- **Phase 2** — applies repo settings (merge flags, `delete_branch_on_merge`, wiki/projects).
-- **Phase 3** — applies security settings (Dependabot, secret scanning, push protection).
-- **Phase 4** — applies branch protection and the `main-protection` ruleset.
-- **Phase 5** — re-audits and diffs against the phase-1 snapshot.
+- **Phase 1** (`--phase 1`) — read-only audit; writes `${TMPDIR:-/tmp}/gh_hardening_audit_before.json`; with `--fail-on-noncompliant` exits non-zero when any repo drifts.
+- **Phase 2** (`--phase 2`) — applies repo settings (merge flags, `delete_branch_on_merge`, wiki/projects).
+- **Phase 3** (`--phase 3`) — applies security settings (Dependabot, secret scanning, push protection).
+- **Phase 4** (`--phase 4`) — applies branch protection and the `main-protection` ruleset.
+- **Phase 5** (`--phase 5`) — re-audits and diffs against the phase-1 snapshot.
+- **`--dry-run`** — runs phases 1-4 with no side effects; prints "would apply" for every mutation.
 
-See `CLAUDE.md` for the script's invariants and conventions.
+See `CLAUDE.md` for invariants and conventions.
+
+## Development
+
+```bash
+make build           # compile bin/harden-repos
+make test            # run unit tests (// given / // when / // then BDD style)
+make lint            # golangci-lint
+make sast            # full SAST suite via rios0rios0/pipelines
+make run ARGS='--phase 1 --repo autobump'
+```
 
 ## Related Repositories
 

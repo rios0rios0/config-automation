@@ -30,10 +30,11 @@ jobs:
       - name: 'Checkout fleet-maintenance'
         uses: 'actions/checkout@v6'
 
-      - name: 'Set up Python'
-        uses: 'actions/setup-python@v6'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v6'
         with:
-          python-version: '3.12'
+          go-version: '1.26'
+          cache: true
 
       - name: 'Build matrix'
         id: 'build-matrix'
@@ -48,13 +49,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${REPO_INPUT}" ]; then
-            # Single-repo override for workflow_dispatch testing.
+            # Single-repo override for workflow_dispatch testing. Uses gh's
+            # built-in `gh api` so we don't spin up the Go binary just to
+            # fetch one default_branch.
             default_branch=$(gh api "/repos/${HARDEN_OWNER}/${REPO_INPUT}" --jq '.default_branch')
-            repos=$(python3 -c 'import json,sys; print(json.dumps([{"name": sys.argv[1], "default_branch": sys.argv[2]}]))' "${REPO_INPUT}" "${default_branch}")
+            repos=$(printf '[{"name":"%s","default_branch":"%s"}]' "${REPO_INPUT}" "${default_branch}")
           else
-            repos=$(python3 scripts/harden_repos.py --list-json)
+            repos=$(go run ./cmd/harden-repos --list-json)
           fi
-          count=$(printf '%s' "${repos}" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+          count=$(printf '%s' "${repos}" | jq 'length')
           {
             echo "repos=${repos}"
             echo "count=${count}"

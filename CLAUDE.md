@@ -4,57 +4,58 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repository Is
 
-This repo houses **scheduled, cross-repo maintenance workflows** that run from a central location and act on every `rios0rios0` repository. There are two of them, and the Python script they share:
+This repo houses **scheduled, cross-repo maintenance workflows** that run from a central location and act on every `rios0rios0` repository, plus the Go CLI they drive:
 
-1. **`.github/workflows/repo-compliance-audit.yaml`** — daily (06:00 UTC) audit that runs `scripts/harden_repos.py --phase 1 --fail-on-noncompliant` against every `rios0rios0` repo. Fails if any repo drifts from the compliance policy. Uploads `/tmp/gh_hardening_audit_before.json` as an artifact.
+1. **`.github/workflows/repo-compliance-audit.yaml`** — daily (06:00 UTC) audit that runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` against every `rios0rios0` repo. Fails if any repo drifts from the compliance policy. Uploads `/tmp/gh_hardening_audit_before.json` as an artifact.
 
-2. **`.github/workflows/ai-docs-refresh.yaml`** — weekly (Mondays 07:00 UTC) matrix workflow. The `discover` job calls `scripts/harden_repos.py --list-json` to enumerate non-fork non-archived repos. The `refresh` job self-checks-out this repo to load `scripts/refresh_ai_docs_prompt.md`, then checks out each target repo and invokes `anthropics/claude-code-action@v1` against it. Drift detection uses `git add -N` (intent-to-add) followed by `git diff -w --quiet` so modified and newly-created `CLAUDE.md` / `.github/copilot-instructions.md` both count; whitespace-only diffs are ignored. `CHANGELOG.md` is staged alongside the AI-docs files (so Claude's release-note entry lands in the same PR) but is intentionally **not** part of the drift gate — a stray CHANGELOG-only edit cannot open a spurious PR. Branch name is stable (`chore/ai-docs-refresh`) and force-pushed so repeated runs update a single open PR.
+2. **`.github/workflows/ai-docs-refresh.yaml`** — weekly (Mondays 07:00 UTC) matrix workflow. The `discover` job calls `go run ./cmd/harden-repos --list-json` to enumerate non-fork non-archived repos. The `refresh` job self-checks-out this repo to load `scripts/refresh_ai_docs_prompt.md`, then checks out each target repo and invokes `anthropics/claude-code-action@v1` against it. Drift detection uses `git add -N` (intent-to-add) followed by `git diff -w --quiet` so modified and newly-created `CLAUDE.md` / `.github/copilot-instructions.md` both count; whitespace-only diffs are ignored. `CHANGELOG.md` is staged alongside the AI-docs files (so Claude's release-note entry lands in the same PR) but is intentionally **not** part of the drift gate — a stray CHANGELOG-only edit cannot open a spurious PR. Branch name is stable (`chore/ai-docs-refresh`) and force-pushed so repeated runs update a single open PR.
 
-3. **`scripts/harden_repos.py`** — the heart of the compliance system. Understanding its phase model is required before editing.
+3. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy. Understanding its architecture is required before editing.
 
-## The `harden_repos.py` Script
+## The `harden-repos` CLI
 
-Phase model:
+Clean Architecture split:
 
-- **Phase 1 (`--phase 1`)** — read-only audit. Builds an `audits` list of dicts (one per repo) and writes `/tmp/gh_hardening_audit_before.json`. With `--fail-on-noncompliant` (used by CI) it exits 1 when `compute_issues()` reports any violations.
-- **Phases 2/3/4** — mutations. Each first re-runs phase 1 to get fresh audit data, then applies only the diffs. Phase 4 (branch protection + `main-protection` ruleset) skips private repos and repos where `protection_available=False`.
-- **Phase 5** — re-audits and diffs against the phase-1 snapshot on disk.
-- **`--dry-run`** — runs phases 1–4 with no side effects; `--phase` is ignored.
-- **`--list-json`** — emits a JSON array of `{name, default_branch}` filtered to non-fork non-archived repos, consumed by the `ai-docs-refresh` matrix.
-- **`--repo <name>`** — target a single repo.
+- **`internal/domain/entities/`** — framework-agnostic data types: `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`. `compliance_policy.go` holds the constants every other package references (`DesiredRepoSettings`, `DesiredWikiAllowlist`, `DesiredReviewCount`, `DesiredRulesetName`, `DesiredDefaultBranch`, `RepositoryAdminActorType`/`ID`). `AuditResult.ComputeIssues()` is the single source of truth for policy compliance and encodes every carve-out (forks skip Dependabot + secret scanning, private repos skip secret scanning + branch protection + rulesets, `DesiredWikiAllowlist` repos keep `has_wiki=true`, `AllowAutoMerge=true` is skipped on private repos because GitHub Free silently ignores the PATCH).
+- **`internal/domain/repositories/`** — three ports: `RepositoriesRepository`, `SecuritySettingsRepository`, `BranchProtectionsRepository`. Each is a small interface with the methods the commands actually need. The domain layer never imports `github.com/google/go-github`.
+- **`internal/domain/commands/`** — one command per phase plus `--list-json`: `AuditRepositoriesCommand`, `ApplyRepositorySettingsCommand`, `ApplySecuritySettingsCommand`, `ApplyBranchProtectionCommand`, `ListTargetRepositoriesCommand`, `ReportComplianceChangesCommand`. Every command exposes a listeners struct (`OnSuccess`, `OnError`, `OnChange`, etc.) so the CLI layer (which plays the controller role) maps outcomes to stdout and exit codes.
+- **`internal/infrastructure/repositories/`** — `GoGithub…Repository` adapters that implement the ports by calling `github.com/google/go-github/v66`. Each also handles the HTTP-status idioms the Python original encoded: 204 vs 404 for vulnerability alerts, 403/404 for branch protection unavailability, rate limits, etc.
+- **`cmd/harden-repos/main.go`** — parses flags, dispatches to commands with listeners that print via Logrus and set exit codes.
 
-Key invariants to preserve when modifying:
+Key invariants to preserve when editing:
 
-- `list_repos()` branches on authenticated user vs `HARDEN_OWNER` and owner account type (`User`/`Organization`). Keep all three code paths (`/user/repos`, `/users/{owner}/repos`, `/orgs/{owner}/repos`) in sync.
-- `check_vulnerability_alerts()` is tri-state (`True`/`False`/`None` for unknown). `compute_issues()` distinguishes `unknown` from `off` — don't collapse them.
-- Ruleset compliance checks three things together: the ruleset name exists, the `non_fast_forward` rule is present, and `conditions.ref_name.include` targets `refs/heads/main`. A name-only match is not compliant.
-- `RULESET_BODY` bypasses `actor_type=RepositoryRole, actor_id=5` (Repository Admin) so the owner can force-push. `BRANCH_PROTECTION_BODY` sets `enforce_admins=False` for the same reason. Don't tighten either without intent.
-- `WIKI_ALLOWLIST` holds the small set of repos (currently only `guide`) that legitimately use the wiki feature; phase 2 won't flip `has_wiki=False` on those.
-- Forks skip `secret_scanning`, `push_protection`, `dependabot_alerts`, and `dependabot_updates` because every upstream sync wipes Dependabot work and secret scanning belongs to the upstream owner. Private repos skip `allow_auto_merge` because GitHub Free silently ignores that `PATCH`.
+- `RepositoriesRepository.FindAllByOwner` branches on whether the owner equals the authenticated login (then `/user/repos` retains private visibility) and on `OwnerKind` (`User` vs `Organization`). Keep all three paths in sync.
+- `SecuritySettingsRepository.FindByRepositoryName` returns `DependabotAlerts *bool` — nil means "unknown" (API failure), pointer-to-false means "disabled". `AuditResult.ComputeIssues` distinguishes the two; don't collapse them.
+- Ruleset compliance is a three-part check: name match, `non_fast_forward` rule, and `refs/heads/main` in the ref-name include list. A name-only match is not compliant (see `Ruleset.IsCompliant`).
+- `RepositoryAdminActorType`/`RepositoryAdminActorID` (from `entities/compliance_policy.go`) stays in every ruleset's `BypassActors` so the owner can force-push when needed.
+- `AuditResult.ComputeIssues` is the policy. Every command that decides whether to mutate consults the audit, not the live API — so phases 2/3/4 are re-reading a single audit list, not round-tripping to GitHub per repo.
 
 Environment variables:
 
 - `HARDEN_OWNER` (default: `rios0rios0`) — GitHub owner/org to audit.
-- `GH_BIN` (default: `gh`) — path to the `gh` CLI binary.
-- `GH_TOKEN` — consumed by `gh` for authentication; both workflows set this from `secrets.COMPLIANCE_AUDIT_TOKEN` (audit) or `secrets.CLAUDE_MD_REFRESH_TOKEN` (refresh discover job).
+- `GH_TOKEN` / `GITHUB_TOKEN` — bearer token for `github.com/google/go-github`. Both workflows set this from `secrets.COMPLIANCE_AUDIT_TOKEN` (audit) or `secrets.CLAUDE_MD_REFRESH_TOKEN` (refresh discover job).
+- `TMPDIR` — respected by `os.TempDir()` for the audit snapshot paths, so the binary runs on hosts where `/tmp` is not writable.
 
 ## Build / Test / Lint
 
-There is no build or test suite. The only runnable code is `scripts/harden_repos.py` (pure stdlib Python 3.12 + the `gh` CLI). To validate a change to the script:
-
 ```bash
-python3 -c "import ast; ast.parse(open('scripts/harden_repos.py').read())"
-python3 scripts/harden_repos.py --dry-run                # exercises phases 1-4 without mutating anything
-python3 scripts/harden_repos.py --phase 1 --repo <name>  # single-repo audit
+make build                          # compile bin/harden-repos
+make test                           # go test -race -tags=unit ./...
+make lint                           # golangci-lint run ./...
+make sast                           # run the full SAST suite from rios0rios0/pipelines
+go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
 ```
+
+Test files use `//go:build unit`, the `_test` package suffix (external tests), `t.Parallel()` on every top-level test function, BDD-style `// given / // when / // then` blocks, and the in-memory doubles in `test/domain/doubles/repositories/` rather than interface mocks.
 
 ## Conventions Specific to This Repo
 
 - **YAML files use `.yaml`** (not `.yml`), with string values single-quoted except where interpolation requires double quotes.
-- **Actions pins:** keep every workflow on the same latest major (currently `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-python@v6`, `anthropics/claude-code-action@v1`). When bumping, bump across both workflows in the same commit.
+- **Go conventions** follow `.claude/rules/golang.md` in the user's global rules: `snake_case` file names, one-letter receiver names (`c` for Command, `r` for Repository), Uber Dig for DI, Logrus for logging, testify for tests, no framework tags on entities.
+- **Actions pins:** keep every workflow on the same latest major (currently `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-go@v6`, `anthropics/claude-code-action@v1`). When bumping, bump across both workflows in the same commit.
 - **Changelog discipline:** every change goes under `[Unreleased]` in `CHANGELOG.md` in the same commit. Keep a Changelog format, simple past tense, backticks around code identifiers.
 - **Commits:** `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
-- **Ruleset/branch-protection changes are load-bearing.** Every `rios0rios0` repo inherits the same policy; a change here propagates to all of them on the next audit run.
+- **Ruleset / branch-protection changes are load-bearing.** Every `rios0rios0` repo inherits the same policy; a change here propagates to all of them on the next audit run.
 
 ## Related Repositories
 

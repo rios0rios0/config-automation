@@ -17,28 +17,29 @@ jobs:
     permissions:
       contents: 'read'
     env:
-      # Personal access token exposed as GH_TOKEN for `gh api`. If using a classic
-      # PAT, grant `repo` plus any required admin access. If using a fine-grained
-      # PAT, grant the repository permissions needed to list private repos and read
-      # ruleset/security-related endpoints. Falls back to the default GITHUB_TOKEN
-      # if the secret is not set (cross-repo calls will fail).
+      # Personal access token exposed as GH_TOKEN for the Go client's
+      # HTTP calls (and the pagination logic in the list endpoint).
+      # If using a classic PAT, grant `repo` plus any required admin
+      # access. If using a fine-grained PAT, grant the repository
+      # permissions needed to list private repos and read
+      # ruleset/security-related endpoints. Falls back to the default
+      # GITHUB_TOKEN if the secret is not set (cross-repo calls will
+      # fail).
       GH_TOKEN: ${{ secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
       HARDEN_OWNER: 'rios0rios0'
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v6'
 
-      - name: 'Set up Python'
-        uses: 'actions/setup-python@v6'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v6'
         with:
-          python-version: '3.12'
-
-      - name: 'Verify gh CLI is available'
-        run: 'gh --version'
+          go-version: '1.26'
+          cache: true
 
       - name: 'Run compliance audit'
         run: |
-          python3 scripts/harden_repos.py --phase 1 --fail-on-noncompliant
+          go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant
 
       - name: 'Upload audit report'
         if: always()
