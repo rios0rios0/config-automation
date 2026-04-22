@@ -16,11 +16,13 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-22
+
 ### Changed
 
-- renamed the `repositories.RepositoriesRepository` port to `repositories.Repository` to remove the package-name stutter flagged by `revive`
-- converted `entities.DesiredRepoSettings` and `entities.DesiredWikiAllowlist` from package-level variables to functions, keeping the compliance policy immutable from call sites
 - changed the Go version to `1.26.2` and updated all module dependencies
+- converted `entities.DesiredRepoSettings` and `entities.DesiredWikiAllowlist` from package-level variables to functions, keeping the compliance policy immutable from call sites
+- renamed the `repositories.RepositoriesRepository` port to `repositories.Repository` to remove the package-name stutter flagged by `revive`
 
 ### Fixed
 
