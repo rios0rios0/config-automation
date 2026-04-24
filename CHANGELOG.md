@@ -23,6 +23,14 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 - added a per-batch summary footer (`no_drift / prs_created / prs_updated / failed`) and a `--max-turns 30` safety cap on each `claude` invocation so a stuck reasoning loop cannot exhaust the job-timeout budget
 - changed the Actions-pins note in `CLAUDE.md` and `.github/copilot-instructions.md` to drop `anthropics/claude-code-action@v1` and add `actions/setup-node@v4` now that the workflow installs the Claude Code CLI directly via `npm`
 
+### Fixed
+
+- fixed the `discover` job in `.github/workflows/ai-docs-refresh.yaml` to validate `inputs.batch_size` before passing it to `jq`, falling back to `10` when the value is not a positive integer so a malformed `workflow_dispatch` input can no longer crash the matrix build
+- changed the per-batch `run` script in `.github/workflows/ai-docs-refresh.yaml` from `set -uo pipefail` to `set -euo pipefail` so a failing `cat`, `jq`, or similar unchecked command aborts the batch instead of emitting misleading per-repo failures
+- changed the drift-detection step in `.github/workflows/ai-docs-refresh.yaml` to build a `drift_paths` list of existing AI-doc files and treat "no AI-doc files present" as no drift, preventing `git diff` from being invoked with a pathspec that doesn't exist in the repo
+- removed the unused `id-token: write` permission from the `refresh` job in `.github/workflows/ai-docs-refresh.yaml` since the workflow authenticates via a PAT and the Claude Code OAuth token rather than OIDC
+- fixed the tool-allowlist description in `CLAUDE.md` to spell out the fully-scoped `Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)` entries instead of the `Write(...)` shorthand, matching the actual CLI args passed to `claude -p`
+
 ## [0.1.1] - 2026-04-22
 
 ### Changed

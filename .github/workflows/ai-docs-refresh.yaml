@@ -65,6 +65,14 @@ jobs:
           BATCH_SIZE: ${{ inputs.batch_size || 10 }}
         run: |
           set -euo pipefail
+          # `inputs.batch_size` is a free-form workflow_dispatch value that
+          # flows into `jq` as `range(0; length; $batchSize)`. A 0, negative,
+          # or non-integer value would crash jq or produce an empty matrix,
+          # so normalize to a positive integer (fall back to 10 otherwise).
+          if ! [[ "${BATCH_SIZE}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Warning: invalid batch_size='${BATCH_SIZE}', falling back to 10." >&2
+            BATCH_SIZE=10
+          fi
           if [ -n "${REPO_INPUT}" ]; then
             # Single-repo override for workflow_dispatch testing. Uses gh's
             # built-in `gh api` so we don't spin up the Go binary just to
@@ -97,7 +105,6 @@ jobs:
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
-      id-token: 'write'
     timeout-minutes: 240
     strategy:
       fail-fast: false
@@ -141,7 +148,7 @@ jobs:
           REFRESH_BRANCH: 'chore/ai-docs-refresh'
           REPOS: ${{ toJSON(matrix.batch.repos) }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           git config --global user.name 'rios0rios0-bot'
           git config --global user.email 'rios0rios0-bot@users.noreply.github.com'
 
@@ -196,11 +203,22 @@ jobs:
             # the drift gate: the prompt rule says Claude only touches
             # CHANGELOG when it also modifies an AI-docs file, so gating
             # on AI docs alone correctly suppresses spurious PRs from any
-            # stray CHANGELOG-only edits.
+            # stray CHANGELOG-only edits. Some repos may legitimately have
+            # neither AI-doc file, so only diff paths that exist after the
+            # refresh step and treat "no AI-doc files present" as no drift.
+            drift_paths=()
             for path in CLAUDE.md .github/copilot-instructions.md; do
-              [ -f "${target}/${path}" ] && git -C "${target}" add -N -- "${path}"
+              if [ -f "${target}/${path}" ]; then
+                drift_paths+=("${path}")
+                git -C "${target}" add -N -- "${path}"
+              fi
             done
-            if git -C "${target}" diff --quiet -w -- CLAUDE.md .github/copilot-instructions.md; then
+            if [ "${#drift_paths[@]}" -eq 0 ]; then
+              no_drift+=("${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+            if git -C "${target}" diff --quiet -w -- "${drift_paths[@]}"; then
               no_drift+=("${target_repo}")
               rm -rf "${target}"
               continue
