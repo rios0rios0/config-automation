@@ -16,6 +16,13 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- changed `.github/workflows/ai-docs-refresh.yaml` to a batched-matrix shape: the `discover` job now chunks the sorted `harden-repos --list-json` output into groups of `batch_size` repos (default `10`) and the `refresh` job runs one leg per batch (`max_parallel: 1` by default) that installs `@anthropic-ai/claude-code` via `npm` and loops through its batch sequentially, replacing the former one-job-per-repo matrix that relied on `anthropics/claude-code-action@v1`
+- added `batch_size` and `max_parallel` `workflow_dispatch` inputs so the matrix shape can be retuned per-run without editing the workflow; defaults preserve the previous serial rate-limit behavior
+- added a per-batch summary footer (`no_drift / prs_created / prs_updated / failed`) and a `--max-turns 30` safety cap on each `claude` invocation so a stuck reasoning loop cannot exhaust the job-timeout budget
+- changed the Actions-pins note in `CLAUDE.md` and `.github/copilot-instructions.md` to drop `anthropics/claude-code-action@v1` and add `actions/setup-node@v4` now that the workflow installs the Claude Code CLI directly via `npm`
+
 ## [0.1.1] - 2026-04-22
 
 ### Changed
