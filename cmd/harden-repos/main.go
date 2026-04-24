@@ -11,8 +11,8 @@ import (
 
 	logger "github.com/sirupsen/logrus"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/commands"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/commands"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
 )
 
 const (

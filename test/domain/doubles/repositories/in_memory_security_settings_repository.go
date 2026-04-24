@@ -3,8 +3,8 @@ package repositories
 import (
 	"context"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/repositories"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
 // InMemorySecuritySettingsRepository records every mutation call so

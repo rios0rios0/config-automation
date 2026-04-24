@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/repositories"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
 // InMemoryRepositoriesRepository is the in-memory double for

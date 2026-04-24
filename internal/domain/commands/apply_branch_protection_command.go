@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/repositories"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
 // ApplyBranchProtectionCommand runs phase 4: apply the classic branch

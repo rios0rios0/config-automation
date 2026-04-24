@@ -3,7 +3,7 @@ package repositories
 import (
 	"context"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
 )
 
 // SecuritySettingsRepository is the port for Dependabot and secret

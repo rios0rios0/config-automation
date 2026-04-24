@@ -3,7 +3,7 @@ package repositories
 import (
 	"context"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
 )
 
 // OwnerKind reports whether an owner is a `User` or an `Organization`

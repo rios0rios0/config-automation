@@ -1,6 +1,6 @@
 package builders
 
-import "github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+import "github.com/rios0rios0/config-automation/internal/domain/entities"
 
 // RepositoryBuilder constructs entities.Repository values for tests with
 // a fluent API. Defaults mimic a fresh public repo in the rios0rios0

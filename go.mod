@@ -1,4 +1,4 @@
-module github.com/rios0rios0/fleet-maintenance
+module github.com/rios0rios0/config-automation
 
 go 1.26.2
 

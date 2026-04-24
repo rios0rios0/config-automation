@@ -1,10 +1,10 @@
-# GitHub Copilot Instructions — fleet-maintenance
+# GitHub Copilot Instructions — config-automation
 
 This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum context needed to work in this repository without first reading the whole codebase. Keep it in sync with `CLAUDE.md` and `README.md`; any change to the compliance policy, CLI flags, workflows, or build commands must be reflected here in the same commit.
 
 ## Project Purpose
 
-`fleet-maintenance` runs scheduled, cross-repo maintenance against every [`rios0rios0`](https://github.com/rios0rios0) repository:
+`config-automation` runs scheduled, cross-repo maintenance against every [`rios0rios0`](https://github.com/rios0rios0) repository:
 
 1. **Daily compliance audit** — `.github/workflows/repo-compliance-audit.yaml` runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` and fails CI when any repo drifts from the hardening policy. Uploads `${TMPDIR:-/tmp}/gh_hardening_audit_before.json` as an artifact.
 2. **Weekly AI docs refresh** — `.github/workflows/ai-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_ai_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns 30 --allowedTools '...'`. Drift detection uses `git add -N` + `git diff -w --quiet` on `CLAUDE.md` and `.github/copilot-instructions.md`; `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/ai-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, and `max_parallel` inputs.
@@ -15,7 +15,7 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 Clean Architecture with `domain` (contracts) / `infrastructure` (implementations) split. Dependencies always point inward; the domain layer never imports `github.com/google/go-github`.
 
 ```
-fleet-maintenance/
+config-automation/
 ├── cmd/
 │   └── harden-repos/               # CLI entry point + Uber Dig wiring (`main.go`, `dig.go`)
 ├── internal/

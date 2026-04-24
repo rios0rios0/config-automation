@@ -16,6 +16,10 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- renamed the repository from `fleet-maintenance` to `config-automation` and updated the Go module path from `github.com/rios0rios0/fleet-maintenance` to `github.com/rios0rios0/config-automation`; all internal imports, `README.md`, `CONTRIBUTING.md`, `.github/copilot-instructions.md`, and the `ai-docs-refresh.yaml` workflow were updated in lockstep
+
 ## [0.2.0] - 2026-04-24
 
 ### Added
@@ -75,7 +79,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ### Changed
 
-- changed `ai-docs-refresh.yaml` to self-checkout `rios0rios0/fleet-maintenance` and read `scripts/refresh_ai_docs_prompt.md` locally instead of fetching it from `rios0rios0/.github` via `gh api`, removing the last hardcoded cross-repo dependency and one network round-trip per refresh
+- changed `ai-docs-refresh.yaml` to self-checkout `rios0rios0/config-automation` and read `scripts/refresh_ai_docs_prompt.md` locally instead of fetching it from `rios0rios0/.github` via `gh api`, removing the last hardcoded cross-repo dependency and one network round-trip per refresh
 - expanded the `anthropics/claude-code-action@v1` allowlist in `ai-docs-refresh.yaml` to include `Edit(/CHANGELOG.md)` and `Write(/CHANGELOG.md)` so Claude can record every AI-docs refresh in the target repo's changelog
 - switched both workflows from `actions/setup-python@v6` + `python3` to `actions/setup-go@v6` + `go run ./cmd/harden-repos` so the scheduled jobs exercise the same Go binary the team maintains locally
 - updated `scripts/refresh_ai_docs_prompt.md` to require Claude to add a short `[Unreleased]` entry to the target repo's `CHANGELOG.md` whenever it edits `CLAUDE.md` or `.github/copilot-instructions.md`, and to skip the entry when the target repo has no changelog

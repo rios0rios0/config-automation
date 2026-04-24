@@ -1,11 +1,11 @@
-<h1 align="center">fleet-maintenance</h1>
+<h1 align="center">config-automation</h1>
 <p align="center">
-    <a href="https://github.com/rios0rios0/fleet-maintenance/releases/latest">
-        <img src="https://img.shields.io/github/release/rios0rios0/fleet-maintenance.svg?style=for-the-badge&logo=github" alt="Latest Release"/></a>
-    <a href="https://github.com/rios0rios0/fleet-maintenance/blob/main/LICENSE">
-        <img src="https://img.shields.io/github/license/rios0rios0/fleet-maintenance.svg?style=for-the-badge&logo=github" alt="License"/></a>
-    <a href="https://github.com/rios0rios0/fleet-maintenance/actions/workflows/repo-compliance-audit.yaml">
-        <img src="https://img.shields.io/github/actions/workflow/status/rios0rios0/fleet-maintenance/repo-compliance-audit.yaml?branch=main&style=for-the-badge&logo=github&label=compliance" alt="Compliance Audit Status"/></a>
+    <a href="https://github.com/rios0rios0/config-automation/releases/latest">
+        <img src="https://img.shields.io/github/release/rios0rios0/config-automation.svg?style=for-the-badge&logo=github" alt="Latest Release"/></a>
+    <a href="https://github.com/rios0rios0/config-automation/blob/main/LICENSE">
+        <img src="https://img.shields.io/github/license/rios0rios0/config-automation.svg?style=for-the-badge&logo=github" alt="License"/></a>
+    <a href="https://github.com/rios0rios0/config-automation/actions/workflows/repo-compliance-audit.yaml">
+        <img src="https://img.shields.io/github/actions/workflow/status/rios0rios0/config-automation/repo-compliance-audit.yaml?branch=main&style=for-the-badge&logo=github&label=compliance" alt="Compliance Audit Status"/></a>
 </p>
 
 Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github.com/rios0rios0) repository compliant with shared hardening policy and in sync with the team's AI-assistant guidance files.
@@ -17,7 +17,7 @@ Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github
 
 ## Prerequisites
 
-Three repository secrets must be set on `rios0rios0/fleet-maintenance`:
+Three repository secrets must be set on `rios0rios0/config-automation`:
 
 | Secret                    | Purpose                                                                                                | Scope                                                                                                                                                                                                                                       |
 |---------------------------|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -28,9 +28,9 @@ Three repository secrets must be set on `rios0rios0/fleet-maintenance`:
 Set them with:
 
 ```bash
-gh secret set COMPLIANCE_AUDIT_TOKEN -R rios0rios0/fleet-maintenance
-gh secret set CLAUDE_MD_REFRESH_TOKEN -R rios0rios0/fleet-maintenance
-gh secret set CLAUDE_CODE_OAUTH_TOKEN -R rios0rios0/fleet-maintenance
+gh secret set COMPLIANCE_AUDIT_TOKEN -R rios0rios0/config-automation
+gh secret set CLAUDE_MD_REFRESH_TOKEN -R rios0rios0/config-automation
+gh secret set CLAUDE_CODE_OAUTH_TOKEN -R rios0rios0/config-automation
 ```
 
 ## Usage
@@ -40,13 +40,13 @@ Both workflows run on cron; no manual action is needed in steady state.
 Manual trigger — one-off AI docs refresh against a single repo:
 
 ```bash
-gh workflow run ai-docs-refresh.yaml -R rios0rios0/fleet-maintenance -f repo=autobump
+gh workflow run ai-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
 ```
 
 Manual trigger — compliance audit on demand:
 
 ```bash
-gh workflow run repo-compliance-audit.yaml -R rios0rios0/fleet-maintenance
+gh workflow run repo-compliance-audit.yaml -R rios0rios0/config-automation
 ```
 
 Locally, the CLI supports the full phase model:
@@ -73,7 +73,7 @@ HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 5
 ## Architecture
 
 ```
-fleet-maintenance/
+config-automation/
 ├── cmd/
 │   └── harden-repos/               # CLI entry point + Dig wiring
 ├── internal/

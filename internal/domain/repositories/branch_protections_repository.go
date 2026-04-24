@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
 )
 
 // ErrRulesetNotFound is returned by FindRulesetByName when no ruleset

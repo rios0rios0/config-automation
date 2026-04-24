@@ -1,6 +1,6 @@
 package builders
 
-import "github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+import "github.com/rios0rios0/config-automation/internal/domain/entities"
 
 // AuditResultBuilder constructs entities.AuditResult values for tests.
 // Defaults produce a public repo with every compliance flag satisfied

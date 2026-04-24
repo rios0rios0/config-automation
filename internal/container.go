@@ -3,9 +3,9 @@ package internal
 import (
 	"go.uber.org/dig"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/commands"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
-	"github.com/rios0rios0/fleet-maintenance/internal/infrastructure/repositories"
+	"github.com/rios0rios0/config-automation/internal/domain/commands"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/infrastructure/repositories"
 )
 
 // RegisterProviders orchestrates provider registration across every

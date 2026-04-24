@@ -59,5 +59,5 @@ Constants in `internal/domain/entities/compliance_policy.go` and the policy carv
 GitHub Actions workflows can only be fully exercised by running them. For the AI docs refresh, trigger a single-repo dispatch against a low-risk target after merge:
 
 ```bash
-gh workflow run ai-docs-refresh.yaml -R rios0rios0/fleet-maintenance -f repo=<safe-repo>
+gh workflow run ai-docs-refresh.yaml -R rios0rios0/config-automation -f repo=<safe-repo>
 ```

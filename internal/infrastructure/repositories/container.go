@@ -8,7 +8,7 @@ import (
 	"go.uber.org/dig"
 	"golang.org/x/oauth2"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/repositories"
+	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
 // RegisterProviders wires the go-github client and the three repository

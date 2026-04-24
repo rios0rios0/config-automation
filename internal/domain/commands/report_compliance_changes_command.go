@@ -1,6 +1,6 @@
 package commands
 
-import "github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
+import "github.com/rios0rios0/config-automation/internal/domain/entities"
 
 // ReportComplianceChangesCommand runs phase 5: given a "before" audit
 // and an "after" audit, it lists the per-field diffs so the operator

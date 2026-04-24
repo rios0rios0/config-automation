@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/commands"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/entities"
-	"github.com/rios0rios0/fleet-maintenance/test/domain/builders"
-	doubles "github.com/rios0rios0/fleet-maintenance/test/domain/doubles/repositories"
+	"github.com/rios0rios0/config-automation/internal/domain/commands"
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/test/domain/builders"
+	doubles "github.com/rios0rios0/config-automation/test/domain/doubles/repositories"
 )
 
 func TestListTargetRepositoriesCommand(t *testing.T) {

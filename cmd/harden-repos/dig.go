@@ -5,8 +5,8 @@ import (
 
 	"go.uber.org/dig"
 
-	"github.com/rios0rios0/fleet-maintenance/internal"
-	"github.com/rios0rios0/fleet-maintenance/internal/domain/commands"
+	"github.com/rios0rios0/config-automation/internal"
+	"github.com/rios0rios0/config-automation/internal/domain/commands"
 )
 
 // commandSet collects the commands that main.go dispatches to. Dig
