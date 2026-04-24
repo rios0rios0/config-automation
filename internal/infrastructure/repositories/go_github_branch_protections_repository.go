@@ -113,14 +113,21 @@ func (r GoGithubBranchProtectionsRepository) EnableRequiredSignatures(
 }
 
 // FindRulesetByName paginates rulesets for the repo and returns the one
-// matching `rulesetName`, or nil when none matches. The returned
-// ruleset is populated with enough fields to judge compliance.
+// matching `rulesetName`. When no match exists, or when the rulesets
+// endpoint returns an upgrade-required 403 (private repos on GitHub
+// Free), the function returns `repositories.ErrRulesetNotFound` so the
+// audit command's private-repo carve-out applies instead of failing
+// the run. Any other 403 is returned unchanged so auth/scope issues
+// are surfaced rather than hidden as a missing ruleset.
 func (r GoGithubBranchProtectionsRepository) FindRulesetByName(
 	ctx context.Context,
 	owner, name, rulesetName string,
 ) (*entities.Ruleset, error) {
 	list, _, err := r.client.Repositories.GetAllRulesets(ctx, owner, name, false)
 	if err != nil {
+		if isUpgradeRequired(err) {
+			return nil, repositories.ErrRulesetNotFound
+		}
 		return nil, err
 	}
 
