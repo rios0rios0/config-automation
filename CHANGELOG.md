@@ -35,6 +35,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 - changed the drift-detection step in `.github/workflows/ai-docs-refresh.yaml` to build a `drift_paths` list of existing AI-doc files and treat "no AI-doc files present" as no drift, preventing `git diff` from being invoked with a pathspec that doesn't exist in the repo
 - removed the unused `id-token: write` permission from the `refresh` job in `.github/workflows/ai-docs-refresh.yaml` since the workflow authenticates via a PAT and the Claude Code OAuth token rather than OIDC
 - fixed the tool-allowlist description in `CLAUDE.md` to spell out the fully-scoped `Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)` entries instead of the `Write(...)` shorthand, matching the actual CLI args passed to `claude -p`
+- fixed `GoGithubBranchProtectionsRepository.FindRulesetByName` to translate `403 Upgrade to GitHub Pro` responses into `repositories.ErrRulesetNotFound` so the daily compliance audit no longer errors on every private repo on GitHub Free — mirrors the existing 403/upgrade-required handling in `FindProtectionByBranch` and lets `AuditResult.ComputeIssues` apply its private-repo carve-out
 
 ## [0.1.1] - 2026-04-22
 
