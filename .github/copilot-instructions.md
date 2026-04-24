@@ -7,7 +7,7 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 `fleet-maintenance` runs scheduled, cross-repo maintenance against every [`rios0rios0`](https://github.com/rios0rios0) repository:
 
 1. **Daily compliance audit** — `.github/workflows/repo-compliance-audit.yaml` runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` and fails CI when any repo drifts from the hardening policy. Uploads `${TMPDIR:-/tmp}/gh_hardening_audit_before.json` as an artifact.
-2. **Weekly AI docs refresh** — `.github/workflows/ai-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, checks out this repo to load `scripts/refresh_ai_docs_prompt.md`, and invokes `anthropics/claude-code-action@v1` against each target. Drift detection uses `git add -N` + `git diff -w --quiet` on `CLAUDE.md` and `.github/copilot-instructions.md`; `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/ai-docs-refresh` is force-pushed to keep one open PR per repo.
+2. **Weekly AI docs refresh** — `.github/workflows/ai-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_ai_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns 30 --allowedTools '...'`. Drift detection uses `git add -N` + `git diff -w --quiet` on `CLAUDE.md` and `.github/copilot-instructions.md`; `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/ai-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, and `max_parallel` inputs.
 3. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy and all phase commands.
 
 ## Architecture
@@ -78,7 +78,7 @@ HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --list-json # matrix input for
 | `GH_TOKEN` / `GITHUB_TOKEN`      | Bearer token for `github.com/google/go-github`.                         |
 | `TMPDIR`                         | Honored by `os.TempDir()` for `gh_hardening_audit_before.json` output.  |
 
-Workflow secrets: `COMPLIANCE_AUDIT_TOKEN` (daily audit), `CLAUDE_MD_REFRESH_TOKEN` (refresh discover + PRs), `CLAUDE_CODE_OAUTH_TOKEN` (refresh Claude Code action).
+Workflow secrets: `COMPLIANCE_AUDIT_TOKEN` (daily audit), `CLAUDE_MD_REFRESH_TOKEN` (refresh discover + PRs), `CLAUDE_CODE_OAUTH_TOKEN` (refresh Claude Code CLI).
 
 ## Conventions
 
@@ -87,7 +87,7 @@ Workflow secrets: `COMPLIANCE_AUDIT_TOKEN` (daily audit), `CLAUDE_MD_REFRESH_TOK
 - **YAML files** — `.yaml` (never `.yml`); single-quote string values except where variable interpolation requires double quotes; never quote booleans or numbers.
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
 - **Changelog** — every change lands under `[Unreleased]` in `CHANGELOG.md` in the same commit. Keep a Changelog format. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.
-- **Actions pins** — keep every workflow on the same latest major. Current pins: `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-go@v6`, `anthropics/claude-code-action@v1`. Bump across both scheduled workflows in the same commit.
+- **Actions pins** — keep every workflow on the same latest major. Current pins: `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-go@v6`, `actions/setup-node@v4`. Bump across both scheduled workflows in the same commit. The `@anthropic-ai/claude-code` npm package is pinned implicitly to `latest` via `npm install -g`.
 
 ## When Editing the Policy
 

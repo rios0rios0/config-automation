@@ -10,6 +10,16 @@ on:
         description: 'Target a single repo (optional, defaults to all non-fork non-archived).'
         required: false
         type: 'string'
+      batch_size:
+        description: 'Repos processed sequentially per matrix leg (defaults to 10).'
+        required: false
+        type: 'number'
+        default: 10
+      max_parallel:
+        description: 'Concurrent matrix legs (defaults to 1; matches the upstream serial rate-limit strategy).'
+        required: false
+        type: 'number'
+        default: 1
 
 concurrency:
   group: 'ai-docs-refresh'
@@ -17,14 +27,14 @@ concurrency:
 
 jobs:
   discover:
-    name: 'Enumerate target repos'
+    name: 'Enumerate and batch target repos'
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
     env:
       HARDEN_OWNER: 'rios0rios0'
     outputs:
-      repos: ${{ steps.build-matrix.outputs.repos }}
+      matrix: ${{ steps.build-matrix.outputs.matrix }}
       count: ${{ steps.build-matrix.outputs.count }}
     steps:
       - name: 'Checkout fleet-maintenance'
@@ -36,6 +46,12 @@ jobs:
           go-version: '1.26'
           cache: true
 
+      # Enumerates repos via `harden-repos --list-json` (or the single-repo
+      # override), then chunks the sorted array into fixed-size batches so
+      # the matrix has O(repos / batch_size) legs instead of one leg per
+      # repo. Each leg loops through its batch internally --- trades a
+      # little per-repo log isolation for a dramatically cleaner
+      # pipeline-run UI as the org grows.
       - name: 'Build matrix'
         id: 'build-matrix'
         env:
@@ -46,8 +62,17 @@ jobs:
           # Scoped to this step only so the PAT isn't exposed to checkout/setup steps.
           GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN || secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
           REPO_INPUT: ${{ inputs.repo }}
+          BATCH_SIZE: ${{ inputs.batch_size || 10 }}
         run: |
           set -euo pipefail
+          # `inputs.batch_size` is a free-form workflow_dispatch value that
+          # flows into `jq` as `range(0; length; $batchSize)`. A 0, negative,
+          # or non-integer value would crash jq or produce an empty matrix,
+          # so normalize to a positive integer (fall back to 10 otherwise).
+          if ! [[ "${BATCH_SIZE}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Warning: invalid batch_size='${BATCH_SIZE}', falling back to 10." >&2
+            BATCH_SIZE=10
+          fi
           if [ -n "${REPO_INPUT}" ]; then
             # Single-repo override for workflow_dispatch testing. Uses gh's
             # built-in `gh api` so we don't spin up the Go binary just to
@@ -57,133 +82,197 @@ jobs:
           else
             repos=$(go run ./cmd/harden-repos --list-json)
           fi
-          count=$(printf '%s' "${repos}" | jq 'length')
+          matrix=$(echo "${repos}" | jq -c --argjson batchSize "${BATCH_SIZE}" '
+            . as $all
+            | [range(0; length; $batchSize) as $i
+               | {
+                   name: ("batch_" + ((($i / $batchSize) + 1) | tostring | if length == 1 then "0" + . else . end)),
+                   repos: $all[$i : $i + $batchSize]
+                 }]')
+          count=$(printf '%s' "${matrix}" | jq 'length')
+          total=$(printf '%s' "${matrix}" | jq '[.[] | .repos | length] | add // 0')
           {
-            echo "repos=${repos}"
+            echo "matrix=${matrix}"
             echo "count=${count}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Discovered ${count} target repo(s)."
+          echo "Discovered ${total} target repo(s) across ${count} batch(es) of up to ${BATCH_SIZE}."
+          echo "${matrix}" | jq '[.[] | {name, count: (.repos | length)}]'
 
   refresh:
-    name: 'Refresh ${{ matrix.repo.name }}'
+    name: 'Refresh ${{ matrix.batch.name }}'
     needs: 'discover'
     if: ${{ needs.discover.outputs.count != '0' }}
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
-      id-token: 'write'
+    timeout-minutes: 240
     strategy:
       fail-fast: false
-      # Serial matrix execution (max-parallel: 1) so Anthropic's API sees a
-      # steady single-request drip instead of bursts. A weekly run has room
-      # to spend ~9 h iterating through ~60 repos; a parallel burst chews
-      # through the per-minute rate limit and amplifies the cost of the
-      # permission-denial loop that each no-drift repo incurs.
-      max-parallel: 1
+      # Each matrix leg handles up to `batch_size` repos sequentially; legs
+      # themselves run in parallel up to `max_parallel`. The default of 1
+      # preserves the previous serial behavior so Anthropic's API sees a
+      # steady single-request drip instead of bursts --- raise carefully,
+      # because a parallel burst chews through the per-minute rate limit
+      # and amplifies the cost of the permission-denial loop that each
+      # no-drift repo incurs.
+      max-parallel: ${{ fromJSON(inputs.max_parallel || '1') }}
       matrix:
-        repo: ${{ fromJSON(needs.discover.outputs.repos) }}
+        batch: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
       - name: 'Checkout fleet-maintenance (for prompt)'
         uses: 'actions/checkout@v6'
 
-      - name: 'Load refresh prompt from fleet-maintenance'
-        id: 'load-prompt'
-        run: |
-          set -euo pipefail
-          # Read the prompt from the self-checkout into $GITHUB_OUTPUT.
-          # The next step (target-repo checkout) will overwrite the workspace,
-          # but the prompt value lives in the step output so it survives.
-          {
-            echo 'prompt<<AI_DOCS_PROMPT_EOF'
-            cat scripts/refresh_ai_docs_prompt.md
-            echo 'AI_DOCS_PROMPT_EOF'
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: 'Checkout target repo'
-        uses: 'actions/checkout@v6'
+      - name: 'Install Node.js 20'
+        uses: 'actions/setup-node@v4'
         with:
-          repository: 'rios0rios0/${{ matrix.repo.name }}'
-          ref: '${{ matrix.repo.default_branch }}'
-          token: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN }}
-          fetch-depth: 0
+          node-version: '20.x'
 
-      - name: 'Run Claude Code to refresh AI assistant docs'
-        uses: 'anthropics/claude-code-action@v1'
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Tool permissions locked down to exactly what the refresh prompt
-          # needs: read the repo, and edit/create the two guidance files plus
-          # the CHANGELOG (so Claude can record what it changed, per the prompt
-          # rule). Without this allowlist, telemetry showed ~30 `permission_denials_count`
-          # per run because the action allows Claude to probe many tools but the
-          # default harness denies most of them, which burned turns and API
-          # spend on every no-drift no-op. See `scripts/refresh_ai_docs_prompt.md`
-          # for the rule that matches this allowlist.
-          claude_args: '--model claude-opus-4-6 --allowedTools "Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)"'
-          prompt: ${{ steps.load-prompt.outputs.prompt }}
+      - name: 'Install Claude Code CLI'
+        run: 'npm install -g @anthropic-ai/claude-code'
 
-      - name: 'Detect drift and open PR if needed'
+      # Tool allowlist locked down to exactly what the refresh prompt
+      # needs: read the repo, and edit/create the two guidance files plus
+      # the CHANGELOG (so Claude can record what it changed, per the prompt
+      # rule). Without this allowlist, telemetry showed ~30 `permission_denials_count`
+      # per run because the CLI probes many tools but the default harness
+      # denies most of them, which burned turns and API spend on every
+      # no-drift no-op. See `scripts/refresh_ai_docs_prompt.md` for the
+      # rule that matches this allowlist. `--max-turns 30` bounds each
+      # repo invocation so a stuck reasoning loop cannot chew through the
+      # whole job-timeout budget.
+      - name: 'Process batch ${{ matrix.batch.name }}'
         env:
           GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN }}
-          TARGET_REPO: 'rios0rios0/${{ matrix.repo.name }}'
-          TARGET_DEFAULT_BRANCH: '${{ matrix.repo.default_branch }}'
-          BRANCH: 'chore/ai-docs-refresh'
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          HARDEN_OWNER: 'rios0rios0'
+          REFRESH_BRANCH: 'chore/ai-docs-refresh'
+          REPOS: ${{ toJSON(matrix.batch.repos) }}
         run: |
           set -euo pipefail
+          git config --global user.name 'rios0rios0-bot'
+          git config --global user.email 'rios0rios0-bot@users.noreply.github.com'
 
-          # The claude-code-action wrote (or left alone) CLAUDE.md and/or
-          # .github/copilot-instructions.md in the working tree. `git add -N`
-          # (intent-to-add) makes newly created untracked files visible to
-          # `git diff`, so a brand-new CLAUDE.md in a repo that lacked one
-          # counts as drift. `git diff -w` ignores whitespace-only changes
-          # so cosmetic diffs don't churn PRs.
-          #
-          # CHANGELOG.md is intentionally NOT part of the drift gate: the
-          # prompt rule says Claude only touches CHANGELOG when it also
-          # modifies an AI-docs file, so gating on AI docs alone correctly
-          # suppresses spurious PRs from any stray CHANGELOG-only edits.
-          for path in CLAUDE.md .github/copilot-instructions.md; do
-            [ -f "${path}" ] && git add -N -- "${path}"
-          done
+          PROMPT_CONTENT="$(cat "${GITHUB_WORKSPACE}/scripts/refresh_ai_docs_prompt.md")"
+          WORK_DIR="$(mktemp -d)"
+          failed=()
+          prs_created=()
+          prs_updated=()
+          no_drift=()
 
-          if git diff --quiet -w -- CLAUDE.md .github/copilot-instructions.md; then
-            echo 'No substantive drift in AI assistant docs; skipping PR.'
-            exit 0
+          total=$(echo "${REPOS}" | jq 'length')
+          idx=0
+          # Process substitution (not a pipe) so array mutations persist
+          # outside the loop body.
+          while IFS= read -r repo_json; do
+            idx=$((idx + 1))
+            repo_name=$(echo "${repo_json}" | jq -r '.name')
+            default_branch=$(echo "${repo_json}" | jq -r '.default_branch')
+            target_repo="${HARDEN_OWNER}/${repo_name}"
+            target="${WORK_DIR}/${repo_name}"
+
+            echo "=========== [${idx}/${total}] ${target_repo} ==========="
+            rm -rf "${target}"
+
+            if ! git clone --quiet \
+                "https://x-access-token:${GH_TOKEN}@github.com/${target_repo}.git" \
+                "${target}"; then
+              failed+=("clone: ${target_repo}")
+              continue
+            fi
+
+            if ! git -C "${target}" checkout --quiet "${default_branch}"; then
+              failed+=("checkout: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+
+            if ! (cd "${target}" && claude -p "${PROMPT_CONTENT}" \
+                  --model 'claude-opus-4-6' \
+                  --max-turns 30 \
+                  --allowedTools 'Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)'); then
+              failed+=("claude: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+
+            # Drift detection. `git add -N` (intent-to-add) makes newly
+            # created untracked files visible to `git diff`, so a brand-new
+            # CLAUDE.md in a repo that lacked one counts as drift. `git
+            # diff -w` ignores whitespace-only changes so cosmetic diffs
+            # don't churn PRs. CHANGELOG.md is intentionally NOT part of
+            # the drift gate: the prompt rule says Claude only touches
+            # CHANGELOG when it also modifies an AI-docs file, so gating
+            # on AI docs alone correctly suppresses spurious PRs from any
+            # stray CHANGELOG-only edits. Some repos may legitimately have
+            # neither AI-doc file, so only diff paths that exist after the
+            # refresh step and treat "no AI-doc files present" as no drift.
+            drift_paths=()
+            for path in CLAUDE.md .github/copilot-instructions.md; do
+              if [ -f "${target}/${path}" ]; then
+                drift_paths+=("${path}")
+                git -C "${target}" add -N -- "${path}"
+              fi
+            done
+            if [ "${#drift_paths[@]}" -eq 0 ]; then
+              no_drift+=("${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+            if git -C "${target}" diff --quiet -w -- "${drift_paths[@]}"; then
+              no_drift+=("${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+
+            # Idempotent branch: force-push updates the diff if a PR
+            # already exists.
+            git -C "${target}" checkout -B "${REFRESH_BRANCH}"
+            [ -f "${target}/CLAUDE.md" ] && git -C "${target}" add CLAUDE.md
+            [ -f "${target}/.github/copilot-instructions.md" ] && git -C "${target}" add .github/copilot-instructions.md
+            [ -f "${target}/CHANGELOG.md" ] && git -C "${target}" add CHANGELOG.md
+            git -C "${target}" add -u CLAUDE.md .github/copilot-instructions.md CHANGELOG.md 2>/dev/null || true
+
+            if ! git -C "${target}" commit --quiet -m 'chore(ai-docs): refreshed AI assistant guidance'; then
+              failed+=("commit: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+
+            if ! git -C "${target}" push --quiet --force --set-upstream origin "${REFRESH_BRANCH}"; then
+              failed+=("push: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+
+            if gh pr view "${REFRESH_BRANCH}" --repo "${target_repo}" --json number >/dev/null 2>&1; then
+              pr_num=$(gh pr view "${REFRESH_BRANCH}" --repo "${target_repo}" --json number --jq '.number')
+              echo "PR #${pr_num} already exists; force-push updated its diff."
+              prs_updated+=("${target_repo}#${pr_num}")
+            else
+              if pr_url=$(gh pr create \
+                  --repo "${target_repo}" \
+                  --base "${default_branch}" \
+                  --head "${REFRESH_BRANCH}" \
+                  --title 'chore(ai-docs): refresh AI assistant guidance' \
+                  --body $'Automated weekly refresh by `ai-docs-refresh.yaml` in `rios0rios0/fleet-maintenance`.\n\nClaude Code reviewed `CLAUDE.md` and `.github/copilot-instructions.md` against the current code, updated whichever drifted, and recorded the change in `CHANGELOG.md` (when the repo has one).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
+                echo "Created ${pr_url}"
+                prs_created+=("${target_repo} (${pr_url})")
+              else
+                failed+=("pr-create: ${target_repo}")
+              fi
+            fi
+
+            rm -rf "${target}"
+          done < <(echo "${REPOS}" | jq -c '.[]')
+
+          rm -rf "${WORK_DIR}"
+
+          echo
+          echo '==== Batch summary ===='
+          echo "no_drift (${#no_drift[@]}): ${no_drift[*]:-}"
+          echo "prs_created (${#prs_created[@]}): ${prs_created[*]:-}"
+          echo "prs_updated (${#prs_updated[@]}): ${prs_updated[*]:-}"
+          echo "failed (${#failed[@]}): ${failed[*]:-}"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            exit 1
           fi
-
-          git config user.name 'rios0rios0-bot'
-          git config user.email 'rios0rios0-bot@users.noreply.github.com'
-
-          # Idempotent branch: force-push updates the diff if a PR already exists.
-          git checkout -B "${BRANCH}"
-          # Only add files that exist to avoid `git add` errors on repos missing either.
-          [ -f CLAUDE.md ] && git add CLAUDE.md
-          [ -f .github/copilot-instructions.md ] && git add .github/copilot-instructions.md
-          # Pick up any CHANGELOG.md entry Claude added alongside the AI-docs refresh.
-          [ -f CHANGELOG.md ] && git add CHANGELOG.md
-          # If Claude deleted any of them (unexpected), stage the removal too.
-          git add -u CLAUDE.md .github/copilot-instructions.md CHANGELOG.md 2>/dev/null || true
-          git commit -m 'chore(ai-docs): refreshed AI assistant guidance'
-
-          # `anthropics/claude-code-action@v1` rewrites `origin` to point at
-          # `github.repository` (the workflow-hosting `fleet-maintenance` repo)
-          # regardless of which repo `actions/checkout@v6` pulled. Without this
-          # reset, the push lands on `rios0rios0/fleet-maintenance`, not the
-          # target repo, and then `gh pr create --repo ${TARGET_REPO}` fails
-          # with "No commits between main and chore/ai-docs-refresh, Head ref
-          # must be a branch".
-          git remote set-url origin \
-            "https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git"
-          git push --force --set-upstream origin "${BRANCH}"
-
-          if gh pr view "${BRANCH}" --repo "${TARGET_REPO}" --json number >/dev/null 2>&1; then
-            echo 'PR already exists; force-push updated its diff.'
-            exit 0
-          fi
-
-          gh pr create \
-            --repo "${TARGET_REPO}" \
-            --base "${TARGET_DEFAULT_BRANCH}" \
-            --head "${BRANCH}" \
-            --title 'chore(ai-docs): refresh AI assistant guidance' \
-            --body $'Automated weekly refresh by `ai-docs-refresh.yaml` in `rios0rios0/fleet-maintenance`.\n\nClaude Code reviewed `CLAUDE.md` and `.github/copilot-instructions.md` against the current code, updated whichever drifted, and recorded the change in `CHANGELOG.md` (when the repo has one).\n\nReview the diff carefully — this PR was generated by Claude Code and may contain inaccuracies.'
