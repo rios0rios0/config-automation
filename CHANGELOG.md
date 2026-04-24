@@ -16,6 +16,11 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Added
+
+- added `.github/workflows/claude-code-review.yaml`, the PR-opened/synchronize/reopen wrapper that calls the reusable `rios0rios0/.github/.github/workflows/claude-code-review.yaml@main` workflow with `secrets: inherit` so every new PR on this repo gets an automated Claude Code review
+- added `.github/workflows/claude.yaml`, the issue/PR-comment wrapper that calls the reusable `rios0rios0/.github/.github/workflows/claude.yaml@main` workflow with `secrets: inherit` so `@claude` mentions on issues, PR comments, and PR reviews trigger the Claude Code assistant (gated to `OWNER`/`MEMBER`/`COLLABORATOR` by the reusable workflow)
+
 ### Changed
 
 - changed `.github/workflows/ai-docs-refresh.yaml` to a batched-matrix shape: the `discover` job now chunks the sorted `harden-repos --list-json` output into groups of `batch_size` repos (default `10`) and the `refresh` job runs one leg per batch (`max_parallel: 1` by default) that installs `@anthropic-ai/claude-code` via `npm` and loops through its batch sequentially, replacing the former one-job-per-repo matrix that relied on `anthropics/claude-code-action@v1`
