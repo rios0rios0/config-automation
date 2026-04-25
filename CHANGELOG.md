@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-25
+
 ### Changed
 
 - renamed the repository from `fleet-maintenance` to `config-automation` and updated the Go module path from `github.com/rios0rios0/fleet-maintenance` to `github.com/rios0rios0/config-automation`; all internal imports, `README.md`, `CONTRIBUTING.md`, `.github/copilot-instructions.md`, and the `ai-docs-refresh.yaml` workflow were updated in lockstep
