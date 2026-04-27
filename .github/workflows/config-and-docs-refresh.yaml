@@ -20,6 +20,11 @@ on:
         required: false
         type: 'number'
         default: 2
+      max_turns:
+        description: 'Max claude reasoning turns per repo (defaults to 50; raise if you see "Reached max turns" on a legitimately complex repo).'
+        required: false
+        type: 'number'
+        default: 50
 
 concurrency:
   group: 'config-and-docs-refresh'
@@ -147,6 +152,7 @@ jobs:
           HARDEN_OWNER: 'rios0rios0'
           REFRESH_BRANCH: 'chore/config-and-docs-refresh'
           REPOS: ${{ toJSON(matrix.batch.repos) }}
+          MAX_TURNS: ${{ inputs.max_turns || '50' }}
         run: |
           set -euo pipefail
           git config --global user.name 'rios0rios0-bot'
@@ -154,10 +160,13 @@ jobs:
 
           PROMPT_CONTENT="$(cat "${GITHUB_WORKSPACE}/scripts/refresh_config_and_docs_prompt.md")"
           WORK_DIR="$(mktemp -d)"
+          CLAUDE_LOG="${WORK_DIR}/.claude.log"
           failed=()
           prs_created=()
           prs_updated=()
           no_drift=()
+          quota_skipped=()
+          quota_hit=0
 
           total=$(echo "${REPOS}" | jq 'length')
           idx=0
@@ -169,6 +178,17 @@ jobs:
             default_branch=$(echo "${repo_json}" | jq -r '.default_branch')
             target_repo="${HARDEN_OWNER}/${repo_name}"
             target="${WORK_DIR}/${repo_name}"
+
+            # If a previous iteration tripped the org's monthly Claude
+            # usage limit, skip the rest of the batch --- subsequent claude
+            # invocations will all fail with the same error and just burn
+            # ~3min/repo. The summary still reports them so it's visible
+            # which repos didn't get a chance.
+            if [ "${quota_hit}" -eq 1 ]; then
+              echo "=========== [${idx}/${total}] ${target_repo} (SKIPPED: monthly Claude usage limit hit earlier in batch) ==========="
+              quota_skipped+=("${target_repo}")
+              continue
+            fi
 
             echo "=========== [${idx}/${total}] ${target_repo} ==========="
             rm -rf "${target}"
@@ -190,11 +210,29 @@ jobs:
             # the outer `while read` loop's stdin (the jq pipe) and consumes
             # the rest of the repo list, so the loop exits silently after
             # the first iteration with a misleading "Batch summary".
-            if ! (cd "${target}" && claude -p "${PROMPT_CONTENT}" \
+            #
+            # Output is tee'd to ${CLAUDE_LOG} so we can classify the
+            # failure: "monthly usage limit" hits the org's Claude
+            # subscription cap, in which case retrying every remaining
+            # repo just burns ~3min each into the same wall --- set
+            # `quota_hit=1` so the loop top short-circuits.
+            #
+            # PIPESTATUS[0] holds the subshell's (claude's) exit code;
+            # we explicitly do not want `tee`'s exit code, which is
+            # almost always 0 and would mask claude failures.
+            rm -f "${CLAUDE_LOG}"
+            ( cd "${target}" && claude -p "${PROMPT_CONTENT}" \
                   --model 'claude-opus-4-6' \
-                  --max-turns 30 \
-                  --allowedTools 'Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)' </dev/null); then
-              failed+=("claude: ${target_repo}")
+                  --max-turns "${MAX_TURNS}" \
+                  --allowedTools 'Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)' </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
+            claude_rc=${PIPESTATUS[0]}
+            if [ "${claude_rc}" -ne 0 ]; then
+              if grep -qF 'monthly usage limit' "${CLAUDE_LOG}"; then
+                failed+=("claude-quota: ${target_repo}")
+                quota_hit=1
+              else
+                failed+=("claude: ${target_repo}")
+              fi
               rm -rf "${target}"
               continue
             fi
@@ -279,6 +317,7 @@ jobs:
           echo "no_drift (${#no_drift[@]}): ${no_drift[*]:-}"
           echo "prs_created (${#prs_created[@]}): ${prs_created[*]:-}"
           echo "prs_updated (${#prs_updated[@]}): ${prs_updated[*]:-}"
+          echo "quota_skipped (${#quota_skipped[@]}): ${quota_skipped[*]:-}"
           echo "failed (${#failed[@]}): ${failed[*]:-}"
           if [ "${#failed[@]}" -gt 0 ]; then
             exit 1
