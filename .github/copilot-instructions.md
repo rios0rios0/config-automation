@@ -22,7 +22,7 @@ config-automation/
 │   ├── container.go                # top-level DI orchestrator
 │   ├── domain/
 │   │   ├── commands/               # one command per phase + `--list-json` + `--dry-run`
-│   │   ├── entities/               # `Repository`, `AuditResult`, `ComplianceIssue`, `compliance_policy.go`
+│   │   ├── entities/               # `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`, `compliance_policy.go`
 │   │   └── repositories/           # three port interfaces (repos, security, branch protection)
 │   └── infrastructure/
 │       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v66`
@@ -30,7 +30,7 @@ config-automation/
 │   └── domain/
 │       ├── builders/               # `RepositoryBuilder`, `AuditResultBuilder`
 │       └── doubles/repositories/   # in-memory doubles preferred over `testify/mock`
-├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `default.yaml`
+├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `default.yaml`, `claude-code-review.yaml`, `claude.yaml`
 └── scripts/
     └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
