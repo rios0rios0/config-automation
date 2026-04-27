@@ -1,6 +1,6 @@
-Review the AI-assistant guidance files in this repository against the actual code and update them **only if they have meaningfully drifted** from the current state of the codebase.
+Review the in-scope configuration and documentation files in this repository against the actual code and update them **only if they have meaningfully drifted** from the current state of the codebase. The host workflow (`config-and-docs-refresh.yaml`) is intentionally named for the broader scope so additional refresh targets (diagrams, more config files) can be added later by extending this prompt and the workflow's `drift_paths` together.
 
-Two files are in scope, both optional:
+Today the in-scope set is the AI-assistant guidance files only. Two files are in scope, both optional:
 
 - `CLAUDE.md` at the repo root — guidance for Claude Code sessions.
 - `.github/copilot-instructions.md` — guidance for GitHub Copilot sessions.

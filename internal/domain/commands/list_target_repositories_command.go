@@ -8,9 +8,9 @@ import (
 	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
-// ListTargetRepositoriesCommand powers `--list-json` for the AI docs
-// refresh matrix. It filters out forks and archived repos so the
-// weekly refresh only targets live repos.
+// ListTargetRepositoriesCommand powers `--list-json` for the
+// config-and-docs refresh matrix. It filters out forks and archived
+// repos so the weekly refresh only targets live repos.
 type ListTargetRepositoriesCommand struct {
 	reposRepo repositories.Repository
 }

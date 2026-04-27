@@ -7,7 +7,7 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 `config-automation` runs scheduled, cross-repo maintenance against every [`rios0rios0`](https://github.com/rios0rios0) repository:
 
 1. **Daily compliance audit** — `.github/workflows/repo-compliance-audit.yaml` runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` and fails CI when any repo drifts from the hardening policy. Uploads `${TMPDIR:-/tmp}/gh_hardening_audit_before.json` as an artifact.
-2. **Weekly AI docs refresh** — `.github/workflows/ai-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_ai_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns 30 --allowedTools '...'`. Drift detection uses `git add -N` + `git diff -w --quiet` on `CLAUDE.md` and `.github/copilot-instructions.md`; `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/ai-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, and `max_parallel` inputs.
+2. **Weekly config and docs refresh** — `.github/workflows/config-and-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_config_and_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns 30 --allowedTools '...' </dev/null` (the `</dev/null` is load-bearing: without it `claude` inherits the loop's stdin from `jq` and drains the batch after the first repo). Drift detection uses `git add -N` + `git diff -w --quiet` on the in-scope files (today: `CLAUDE.md` and `.github/copilot-instructions.md`); `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/config-and-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, and `max_parallel` inputs (defaults: `10` and `2`). The workflow is named for the broader scope so future refresh targets (diagrams, more config files) can be added without renaming.
 3. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy and all phase commands.
 
 ## Architecture
@@ -30,9 +30,9 @@ config-automation/
 │   └── domain/
 │       ├── builders/               # `RepositoryBuilder`, `AuditResultBuilder`
 │       └── doubles/repositories/   # in-memory doubles preferred over `testify/mock`
-├── .github/workflows/              # `repo-compliance-audit.yaml`, `ai-docs-refresh.yaml`, `default.yaml`
+├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `default.yaml`
 └── scripts/
-    └── refresh_ai_docs_prompt.md   # prompt consumed by the AI docs refresh workflow
+    └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
 
 ## Load-Bearing Invariants
@@ -67,7 +67,7 @@ HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 3   # security setting
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 4   # branch protection + ruleset
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 5   # re-audit + diff snapshot
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --dry-run   # phases 1-4, no mutations
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --list-json # matrix input for ai-docs-refresh
+HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --list-json # matrix input for config-and-docs-refresh
 ```
 
 ## Environment Variables

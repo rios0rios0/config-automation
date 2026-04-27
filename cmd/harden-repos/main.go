@@ -46,7 +46,7 @@ func main() {
 		&listJSON,
 		"list-json",
 		false,
-		"emit a JSON array of non-fork non-archived repos for the AI docs matrix",
+		"emit a JSON array of non-fork non-archived repos for the config-and-docs refresh matrix",
 	)
 	flag.BoolVar(&dryRun, "dry-run", false, "run phases 1-4 without mutating anything")
 	flag.BoolVar(
@@ -87,7 +87,7 @@ func main() {
 	}
 }
 
-// runListJSON emits the JSON array consumed by the AI docs matrix.
+// runListJSON emits the JSON array consumed by the config-and-docs refresh matrix.
 func runListJSON(ctx context.Context, set commandSet, owner string) {
 	var result []entities.Repository
 	set.ListTargets.Execute(

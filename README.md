@@ -8,12 +8,12 @@
         <img src="https://img.shields.io/github/actions/workflow/status/rios0rios0/config-automation/repo-compliance-audit.yaml?branch=main&style=for-the-badge&logo=github&label=compliance" alt="Compliance Audit Status"/></a>
 </p>
 
-Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github.com/rios0rios0) repository compliant with shared hardening policy and in sync with the team's AI-assistant guidance files.
+Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github.com/rios0rios0) repository compliant with shared hardening policy and in sync with the team's configuration and documentation files.
 
 ## Features
 
 - **Repo compliance audit** — daily cron that fails CI if any `rios0rios0` repo drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags).
-- **AI assistant docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates `CLAUDE.md` and `.github/copilot-instructions.md` only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo.
+- **Config and docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates the in-scope configuration and documentation files only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo. Today the in-scope set is `CLAUDE.md` and `.github/copilot-instructions.md`; the workflow is intentionally named for the broader scope so future targets (diagrams, additional config files) can be added without renaming.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ Three repository secrets must be set on `rios0rios0/config-automation`:
 | Secret                    | Purpose                                                                                                | Scope                                                                                                                                                                                                                                       |
 |---------------------------|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `COMPLIANCE_AUDIT_TOKEN`  | Lists all `rios0rios0` repos and reads security/ruleset endpoints for the daily audit.                 | Classic PAT with the `repo` scope, **or** fine-grained PAT scoped to all repositories under `rios0rios0` with read access to `Administration`, `Contents`, `Metadata`, `Webhooks`, and to `Dependabot alerts` and `Secret scanning alerts`. |
-| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/ai-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under `rios0rios0` with `Contents: write`, `Pull requests: write`, and `Metadata: read`.                                                                                                        |
+| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/config-and-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under `rios0rios0` with `Contents: write`, `Pull requests: write`, and `Metadata: read`.                                                                                                        |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Authenticates `anthropics/claude-code-action@v1` during the refresh.                                   | Claude Code OAuth token.                                                                                                                                                                                                                    |
 
 Set them with:
@@ -37,10 +37,10 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN -R rios0rios0/config-automation
 
 Both workflows run on cron; no manual action is needed in steady state.
 
-Manual trigger — one-off AI docs refresh against a single repo:
+Manual trigger — one-off config-and-docs refresh against a single repo:
 
 ```bash
-gh workflow run ai-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
+gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
 ```
 
 Manual trigger — compliance audit on demand:
@@ -63,7 +63,7 @@ HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 4 --repo <name>
 # Preview every phase without mutating anything
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --dry-run
 
-# List target repos for the AI docs matrix (JSON on stdout)
+# List target repos for the config-and-docs refresh matrix (JSON on stdout)
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --list-json
 
 # Re-audit and diff against the before snapshot
@@ -90,7 +90,7 @@ config-automation/
 │       └── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
 ├── .github/workflows/              # two scheduled workflows that run this CLI
 └── scripts/
-    └── refresh_ai_docs_prompt.md   # prompt consumed by the AI docs refresh workflow
+    └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
 
 The CLI follows the 5-phase compliance model:
