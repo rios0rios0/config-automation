@@ -16,6 +16,16 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- renamed `.github/workflows/ai-docs-refresh.yaml` to `.github/workflows/config-and-docs-refresh.yaml`, `scripts/refresh_ai_docs_prompt.md` to `scripts/refresh_config_and_docs_prompt.md`, the stable PR branch from `chore/ai-docs-refresh` to `chore/config-and-docs-refresh`, and the concurrency group to `config-and-docs-refresh` so the workflow's name reflects its broader scope (configuration + documentation); today the in-scope set is still `CLAUDE.md` and `.github/copilot-instructions.md`, and the rename leaves room for future targets like diagrams or additional config files without renaming again
+- raised the default `max_parallel` for the refresh matrix from `1` to `2` so the weekly run finishes in roughly half the wall-clock; the per-batch sequential drip still keeps the steady-state Anthropic request rate well inside the per-minute budget
+- updated the per-repo commit message and PR title produced by the refresh workflow from `chore(ai-docs): refreshed AI assistant guidance` to `chore(refresh): refreshed configuration and documentation` to match the broadened scope
+
+### Fixed
+
+- fixed the per-batch refresh loop in `.github/workflows/config-and-docs-refresh.yaml` (formerly `ai-docs-refresh.yaml`) to redirect `</dev/null` into the `claude -p` invocation; without it `claude` inherited the outer `while read` loop's stdin (the `jq` pipe), drained the rest of the batch's repo list after the first iteration, and silently exited with a misleading per-batch summary — observed in run `24982782411` where every batch processed only `[1/N]` repos before reporting success
+
 ## [0.2.1] - 2026-04-25
 
 ### Changed
