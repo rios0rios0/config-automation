@@ -16,11 +16,13 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-27
+
 ### Changed
 
+- raised the default `max_parallel` for the refresh matrix from `1` to `2` so the weekly run finishes in roughly half the wall-clock; the per-batch sequential drip still keeps the steady-state Anthropic request rate well inside the per-minute budget
 - refreshed `.github/copilot-instructions.md` to replace the non-existent `ComplianceIssue` entity with the actual types (`SecuritySettings`, `BranchProtection`, `Ruleset`) and added the missing `claude-code-review.yaml` and `claude.yaml` workflows to the tree diagram
 - renamed `.github/workflows/ai-docs-refresh.yaml` to `.github/workflows/config-and-docs-refresh.yaml`, `scripts/refresh_ai_docs_prompt.md` to `scripts/refresh_config_and_docs_prompt.md`, the stable PR branch from `chore/ai-docs-refresh` to `chore/config-and-docs-refresh`, and the concurrency group to `config-and-docs-refresh` so the workflow's name reflects its broader scope (configuration + documentation); today the in-scope set is still `CLAUDE.md` and `.github/copilot-instructions.md`, and the rename leaves room for future targets like diagrams or additional config files without renaming again
-- raised the default `max_parallel` for the refresh matrix from `1` to `2` so the weekly run finishes in roughly half the wall-clock; the per-batch sequential drip still keeps the steady-state Anthropic request rate well inside the per-minute budget
 - updated the per-repo commit message and PR title produced by the refresh workflow from `chore(ai-docs): refreshed AI assistant guidance` to `chore(refresh): refreshed configuration and documentation` to match the broadened scope
 
 ### Fixed
