@@ -16,6 +16,11 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Added
+
+- added `max_turns` `workflow_dispatch` input to `.github/workflows/config-and-docs-refresh.yaml` (default `50`, was hard-coded `30`) so the per-repo `claude --max-turns` cap can be raised at queue time when a legitimately complex repo trips the safety limit; observed in run `25008617829` where `rios0rios0/gitforge` exited with `Error: Reached max turns (30)` after processing the 9 simpler repos in its batch
+- added `quota_skipped` tracking and a fail-fast skip path to the per-batch refresh loop: when `claude` fails and its captured output contains `monthly usage limit`, the loop sets a flag that short-circuits every remaining repo (printing them as `(SKIPPED: monthly Claude usage limit hit earlier in batch)` and adding them to a new `quota_skipped` summary line) instead of re-invoking `claude` for ~3 minutes per repo against the same exhausted quota; the first quota-hitting repo is recorded as `claude-quota: <repo>` in `failed` so the overall batch still exits non-zero
+
 ### Changed
 
 - refreshed `.github/copilot-instructions.md` to replace the non-existent `ComplianceIssue` entity with the actual types (`SecuritySettings`, `BranchProtection`, `Ruleset`) and added the missing `claude-code-review.yaml` and `claude.yaml` workflows to the tree diagram
