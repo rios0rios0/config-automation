@@ -16,6 +16,10 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- refreshed `CLAUDE.md` and `.github/copilot-instructions.md` to correct the `actions/setup-node` pin from `@v4` to `@v6` and fix the `FindRulesetByName` attribution from `Repository` to `BranchProtectionsRepository`
+
 ## [0.3.0] - 2026-04-28
 
 ### Added
