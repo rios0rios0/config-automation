@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-19
+
 ### Changed
 
 - refreshed `.github/copilot-instructions.md` to remove the non-functional `make run ARGS='...'` example (the Makefile's `run` target does not interpolate `$(ARGS)`)
