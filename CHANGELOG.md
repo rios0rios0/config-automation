@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-05-25
+
 ### Changed
 
 - refreshed `CLAUDE.md` and `.github/copilot-instructions.md` to update the `actions/setup-node` pin from `@v4` to `@v6`, matching the actual workflow
