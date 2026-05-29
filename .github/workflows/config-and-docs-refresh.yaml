@@ -222,7 +222,7 @@ jobs:
             # almost always 0 and would mask claude failures.
             rm -f "${CLAUDE_LOG}"
             ( cd "${target}" && claude -p "${PROMPT_CONTENT}" \
-                  --model 'claude-opus-4-6' \
+                  --model 'claude-opus-4-8' \
                   --max-turns "${MAX_TURNS}" \
                   --allowedTools 'Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)' </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
             claude_rc=${PIPESTATUS[0]}

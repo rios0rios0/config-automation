@@ -16,6 +16,10 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- changed the `.github/workflows/config-and-docs-refresh.yaml` workflow to invoke the Claude Code CLI with `claude-opus-4-8` instead of `claude-opus-4-6` for the weekly configuration and documentation refresh
+
 ## [0.3.4] - 2026-05-25
 
 ### Changed
