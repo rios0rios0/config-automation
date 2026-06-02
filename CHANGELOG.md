@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-06-02
+
 ### Changed
 
 - refreshed `CLAUDE.md` and `.github/copilot-instructions.md` to attribute `FindRulesetByName` to the `BranchProtectionsRepository` port instead of `Repository`, matching the actual interface
