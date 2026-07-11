@@ -16,9 +16,16 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-07-10
+
 ### Changed
 
 - changed the Go version to `1.26.5` and updated all module dependencies
+
+### Security
+
+- replaced `secrets: inherit` with an explicit `CLAUDE_CODE_OAUTH_TOKEN` secret in the Claude workflow callers, following the least-privilege principle
+- pinned all step-level GitHub Actions to full commit SHAs in the automation workflows
 
 ## [0.3.7] - 2026-06-09
 
