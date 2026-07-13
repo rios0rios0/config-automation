@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-07-13
+
 ### Fixed
 
 - fixed the scheduled audit and refresh workflows failing every run since `0.3.8` with `go.mod requires go >= 1.26.5 (running go 1.26.4; GOTOOLCHAIN=local)`, by deriving the toolchain from `go-version-file: 'go.mod'` instead of the hardcoded `go-version: '1.26'` that resolved to whatever patch release the runner had cached
@@ -28,8 +30,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ### Security
 
-- replaced `secrets: inherit` with an explicit `CLAUDE_CODE_OAUTH_TOKEN` secret in the Claude workflow callers, following the least-privilege principle
 - pinned all step-level GitHub Actions to full commit SHAs in the automation workflows
+- replaced `secrets: inherit` with an explicit `CLAUDE_CODE_OAUTH_TOKEN` secret in the Claude workflow callers, following the least-privilege principle
 
 ## [0.3.7] - 2026-06-09
 
