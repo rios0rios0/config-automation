@@ -216,26 +216,48 @@ jobs:
             # the rest of the repo list, so the loop exits silently after
             # the first iteration with a misleading "Batch summary".
             #
-            # Output is tee'd to ${CLAUDE_LOG} so we can classify the
-            # failure: "monthly usage limit" hits the org's Claude
-            # subscription cap, in which case retrying every remaining
-            # repo just burns ~3min each into the same wall --- set
-            # `quota_hit=1` so the loop top short-circuits.
+            # `set +e` around the pipeline is equally load-bearing. Under
+            # `set -e` + `pipefail` the pipeline's status *is* claude's exit
+            # code, so a non-zero claude aborts the whole step on the spot
+            # and `claude_rc` below is never even read. That is how a single
+            # safeguard refusal on repo 7 stranded repos 8-10 of a 10-repo
+            # batch, and why the quota short-circuit below had in fact never
+            # run. Suspending errexit keeps a claude failure local to the
+            # repo that caused it, so the loop can classify it and move on.
+            #
+            # Output is tee'd to ${CLAUDE_LOG} so the failure can be told
+            # apart:
+            #   - monthly usage limit --- the org's Claude subscription cap
+            #     is exhausted. Every remaining repo would burn ~3min into
+            #     the same wall, so `quota_hit=1` short-circuits the batch.
+            #   - safeguard refusal --- Claude declines the repo's content
+            #     (e.g. a security-topic repo trips the cybersecurity
+            #     safeguard). This is deterministic for that one repo and
+            #     says nothing about the others, so only it is skipped.
+            #   - anything else --- transient API/network error, max-turns
+            #     abort, crash. Also skipped, also non-fatal to the batch.
             #
             # PIPESTATUS[0] holds the subshell's (claude's) exit code;
             # we explicitly do not want `tee`'s exit code, which is
             # almost always 0 and would mask claude failures.
             rm -f "${CLAUDE_LOG}"
+            set +e
             ( cd "${target}" && claude -p "${PROMPT_CONTENT}" \
                   --model 'claude-opus-4-8' \
                   --max-turns "${MAX_TURNS}" \
                   --allowedTools 'Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/CHANGELOG.md)' </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
             claude_rc=${PIPESTATUS[0]}
+            set -e
             if [ "${claude_rc}" -ne 0 ]; then
               if grep -qF 'monthly usage limit' "${CLAUDE_LOG}"; then
+                echo "--> monthly Claude usage limit reached; skipping the rest of this batch."
                 failed+=("claude-quota: ${target_repo}")
                 quota_hit=1
+              elif grep -qEi 'safeguards flagged|cyber-use-case' "${CLAUDE_LOG}"; then
+                echo "--> Claude's safeguards refused this repo (exit ${claude_rc}); moving on to the next one."
+                failed+=("claude-safeguard: ${target_repo}")
               else
+                echo "--> claude exited ${claude_rc}; moving on to the next repo."
                 failed+=("claude: ${target_repo}")
               fi
               rm -rf "${target}"
@@ -275,8 +297,14 @@ jobs:
             fi
 
             # Idempotent branch: force-push updates the diff if a PR
-            # already exists.
-            git -C "${target}" checkout -B "${REFRESH_BRANCH}"
+            # already exists. Guarded like every other git/gh call in this
+            # loop --- a bare command here would abort the whole batch under
+            # `set -e` instead of failing just this repo.
+            if ! git -C "${target}" checkout -B "${REFRESH_BRANCH}"; then
+              failed+=("branch: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
             [ -f "${target}/CLAUDE.md" ] && git -C "${target}" add CLAUDE.md
             [ -f "${target}/.github/copilot-instructions.md" ] && git -C "${target}" add .github/copilot-instructions.md
             [ -f "${target}/CHANGELOG.md" ] && git -C "${target}" add CHANGELOG.md
@@ -334,11 +362,21 @@ jobs:
 
           echo
           echo '==== Batch summary ===='
+          echo "processed (${idx}/${total})"
           echo "no_drift (${#no_drift[@]}): ${no_drift[*]:-}"
           echo "prs_created (${#prs_created[@]}): ${prs_created[*]:-}"
           echo "prs_updated (${#prs_updated[@]}): ${prs_updated[*]:-}"
           echo "quota_skipped (${#quota_skipped[@]}): ${quota_skipped[*]:-}"
-          echo "failed (${#failed[@]}): ${failed[*]:-}"
+          # One per line: every entry is a "<reason>: <owner>/<repo>" pair,
+          # so `${failed[*]}` space-joins them into an unreadable run-on.
+          # Plain `"${failed[@]}"` is safe on an empty array under `set -u`:
+          # the nounset-on-empty-array error was fixed in bash 4.4 and the
+          # runner ships 5.x, so the `${failed[@]+...}` guard buys nothing
+          # here and only obscures that each element stays a single word.
+          echo "failed (${#failed[@]}):"
+          for entry in "${failed[@]}"; do
+            echo "  - ${entry}"
+          done
           if [ "${#failed[@]}" -gt 0 ]; then
             exit 1
           fi
