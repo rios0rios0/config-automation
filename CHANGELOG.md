@@ -24,7 +24,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ### Added
 
-- added a `claude-safeguard:` failure reason so a repository refused by Claude's safeguards is distinguishable in the batch summary from a quota exhaustion or a transient API error
+- added a `claude-safeguard:` failure reason so a repository refused by Claude's safeguards is distinguishable in the batch summary from a quota exhaustion or a transient API error; the detector anchors on the wording-stable phrase `flagged this message for a cybersecurity topic` (plus the exemption-URL slugs of both eras) so it keeps matching across the message rewording from `safeguards flagged` to `safety measures that flagged`
 - added a `processed (n/total)` line to the batch summary, and listed `failed` entries one per line so multiple failures stay readable
 
 ## [0.3.9] - 2026-07-13

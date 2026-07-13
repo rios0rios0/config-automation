@@ -234,6 +234,13 @@ jobs:
             #     (e.g. a security-topic repo trips the cybersecurity
             #     safeguard). This is deterministic for that one repo and
             #     says nothing about the others, so only it is skipped.
+            #     The match anchors on "flagged this message for a
+            #     cybersecurity topic", the phrase common to both the old
+            #     ("safeguards flagged ...") and current ("safety measures
+            #     that flagged ...") wordings, plus the exemption-URL slugs
+            #     of both eras --- the message text has already been
+            #     reworded once, so match the stable phrase, not one
+            #     release's exact string.
             #   - anything else --- transient API/network error, max-turns
             #     abort, crash. Also skipped, also non-fatal to the batch.
             #
@@ -253,7 +260,7 @@ jobs:
                 echo "--> monthly Claude usage limit reached; skipping the rest of this batch."
                 failed+=("claude-quota: ${target_repo}")
                 quota_hit=1
-              elif grep -qEi 'safeguards flagged|cyber-use-case' "${CLAUDE_LOG}"; then
+              elif grep -qEi 'flagged this message for a cybersecurity topic|cyber-use-case|real-time-cyber-safeguards|cyber verification program' "${CLAUDE_LOG}"; then
                 echo "--> Claude's safeguards refused this repo (exit ${claude_rc}); moving on to the next one."
                 failed+=("claude-safeguard: ${target_repo}")
               else
