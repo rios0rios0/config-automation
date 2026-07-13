@@ -87,6 +87,7 @@ Workflow secrets: `COMPLIANCE_AUDIT_TOKEN` (daily audit), `CLAUDE_MD_REFRESH_TOK
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
 - **Changelog** — every change lands under `[Unreleased]` in `CHANGELOG.md` in the same commit. Keep a Changelog format. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.
 - **Actions pins** — keep every workflow on the same latest major. Current pins: `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-go@v6`, `actions/setup-node@v6`. Bump across both scheduled workflows in the same commit. The `@anthropic-ai/claude-code` npm package is pinned implicitly to `latest` via `npm install -g`.
+- **Go toolchain** — every `actions/setup-go` step uses `go-version-file: 'go.mod'`, never a hardcoded `go-version`. `setup-go` exports `GOTOOLCHAIN=local`, so a loose spec like `'1.26'` resolves to whatever patch release the runner cached and then hard-fails every `go run` once `go.mod` requires a newer patch. Bumping `go.mod` is enough; the workflows follow.
 
 ## When Editing the Policy
 

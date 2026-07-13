@@ -16,6 +16,10 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Fixed
+
+- fixed the scheduled audit and refresh workflows failing every run since `0.3.8` with `go.mod requires go >= 1.26.5 (running go 1.26.4; GOTOOLCHAIN=local)`, by deriving the toolchain from `go-version-file: 'go.mod'` instead of the hardcoded `go-version: '1.26'` that resolved to whatever patch release the runner had cached
+
 ## [0.3.8] - 2026-07-10
 
 ### Changed
