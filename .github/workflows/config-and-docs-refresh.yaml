@@ -369,8 +369,12 @@ jobs:
           echo "quota_skipped (${#quota_skipped[@]}): ${quota_skipped[*]:-}"
           # One per line: every entry is a "<reason>: <owner>/<repo>" pair,
           # so `${failed[*]}` space-joins them into an unreadable run-on.
+          # Plain `"${failed[@]}"` is safe on an empty array under `set -u`:
+          # the nounset-on-empty-array error was fixed in bash 4.4 and the
+          # runner ships 5.x, so the `${failed[@]+...}` guard buys nothing
+          # here and only obscures that each element stays a single word.
           echo "failed (${#failed[@]}):"
-          for entry in ${failed[@]+"${failed[@]}"}; do
+          for entry in "${failed[@]}"; do
             echo "  - ${entry}"
           done
           if [ "${#failed[@]}" -gt 0 ]; then
