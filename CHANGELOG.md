@@ -16,16 +16,18 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
-### Fixed
-
-- fixed the config-and-docs refresh workflow aborting an entire matrix leg when the Claude Code CLI failed on a single repository: the step runs under `set -euo pipefail`, so with `pipefail` the `claude | tee` pipeline returned `claude`'s exit code and `errexit` killed the leg before the next line could read `PIPESTATUS[0]`. A cybersecurity-safeguard refusal on the 7th of 10 repositories stranded the remaining 3 and skipped the batch summary. The pipeline is now wrapped in `set +e` / `set -e`, so a failure is attributed to the offending repository and the loop continues.
-- fixed the `monthly usage limit` short-circuit and its `quota_skipped` reporting, which were unreachable for the same reason and had therefore never run
-- fixed `git checkout -B` aborting the batch on failure instead of being recorded against the offending repository, matching every other `git` and `gh` call in the loop
+## [0.4.0] - 2026-07-14
 
 ### Added
 
 - added a `claude-safeguard:` failure reason so a repository refused by Claude's safeguards is distinguishable in the batch summary from a quota exhaustion or a transient API error
 - added a `processed (n/total)` line to the batch summary, and listed `failed` entries one per line so multiple failures stay readable
+
+### Fixed
+
+- fixed `git checkout -B` aborting the batch on failure instead of being recorded against the offending repository, matching every other `git` and `gh` call in the loop
+- fixed the `monthly usage limit` short-circuit and its `quota_skipped` reporting, which were unreachable for the same reason and had therefore never run
+- fixed the config-and-docs refresh workflow aborting an entire matrix leg when the Claude Code CLI failed on a single repository: the step runs under `set -euo pipefail`, so with `pipefail` the `claude | tee` pipeline returned `claude`'s exit code and `errexit` killed the leg before the next line could read `PIPESTATUS[0]`. A cybersecurity-safeguard refusal on the 7th of 10 repositories stranded the remaining 3 and skipped the batch summary. The pipeline is now wrapped in `set +e` / `set -e`, so a failure is attributed to the offending repository and the loop continues.
 
 ## [0.3.9] - 2026-07-13
 
