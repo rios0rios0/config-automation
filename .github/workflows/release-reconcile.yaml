@@ -1,0 +1,83 @@
+name: 'Release Reconcile'
+
+# Weekly org-wide safety net for the "bumped but never released" failure mode:
+# when a bump PR merges to a repo's main but that run fails the quality gate, the
+# pipelines delivery-release job never runs, so no tag/release is cut even though
+# CHANGELOG.md already carries the version. This job diffs every repo's changelog
+# against its tags and re-pushes any missing tag at its bump commit, which
+# re-triggers the pipelines tag-push delivery path and re-cuts the release.
+on:
+  schedule:
+    # Weekly on Mondays at 08:00 UTC (after the 06:00 compliance audit and the
+    # 07:00 config/docs refresh, to spread load).
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Target a single repo (optional; defaults to all non-fork non-archived).'
+        required: false
+        type: 'string'
+      dry_run:
+        description: 'Detect and report without pushing recovery tags.'
+        required: false
+        type: 'boolean'
+        default: false
+      fail_on_gap:
+        description: 'Fail the run if any unrecoverable gap (no bump commit) remains.'
+        required: false
+        type: 'boolean'
+        default: false
+
+concurrency:
+  group: 'release-reconcile'
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: 'Reconcile releases across all rios0rios0 repos'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    env:
+      # Fine-grained PAT with Contents: write across the org — it lists the repos
+      # and pushes the recovery tags. It MUST be a PAT, not the ephemeral
+      # GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN does not start the delivery
+      # workflow, so the release would not be re-cut.
+      GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN || secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
+      HARDEN_OWNER: 'rios0rios0'
+    steps:
+      - name: 'Checkout config-automation'
+        uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
+
+      # Derives the toolchain from `go.mod` rather than a hardcoded minor version,
+      # matching the compliance-audit workflow.
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16' # v6.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      # The gap detector is the single-sourced pipelines primitive; clone it here
+      # rather than vendoring a copy so it stays in lockstep with the pipelines
+      # tag-push delivery contract it feeds.
+      - name: 'Fetch pipelines reconciliation script'
+        run: |
+          git clone --depth 1 --quiet https://github.com/rios0rios0/pipelines.git "${RUNNER_TEMP}/pipelines"
+          echo "RECONCILE_SCRIPT=${RUNNER_TEMP}/pipelines/global/scripts/shared/reconcile-releases.sh" >> "${GITHUB_ENV}"
+
+      - name: 'Reconcile releases'
+        env:
+          REPO_INPUT: ${{ inputs.repo }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          FAIL_ON_GAP: ${{ inputs.fail_on_gap || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${REPO_INPUT}" ]; then
+            # Build the single-repo JSON with jq so a name containing quotes or
+            # newlines cannot break out of the string and target other repos.
+            REPOS_JSON="$(jq -cn --arg n "${REPO_INPUT}" '[{name: $n}]')"
+          else
+            REPOS_JSON="$(go run ./cmd/harden-repos --list-json)"
+          fi
+          export REPOS_JSON
+          ./scripts/reconcile-repos.sh

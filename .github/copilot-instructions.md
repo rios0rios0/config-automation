@@ -8,7 +8,8 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 
 1. **Daily compliance audit** — `.github/workflows/repo-compliance-audit.yaml` runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` and fails CI when any repo drifts from the hardening policy. Uploads `${TMPDIR:-/tmp}/gh_hardening_audit_before.json` as an artifact.
 2. **Weekly config and docs refresh** — `.github/workflows/config-and-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_config_and_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns "${MAX_TURNS}" --allowedTools '...' </dev/null` (the `</dev/null` is load-bearing: without it `claude` inherits the loop's stdin from `jq` and drains the batch after the first repo). `claude` output is tee'd to `${WORK_DIR}/.claude.log` so the loop can detect the org-wide `monthly usage limit` message and short-circuit the rest of the batch (skipped repos surface on a `quota_skipped` summary line; the quota-hitting repo is added to `failed` as `claude-quota:` so the leg still goes red). Drift detection uses `git add -N` + `git diff -w --quiet` on the in-scope files (today: `CLAUDE.md` and `.github/copilot-instructions.md`); `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/config-and-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, `max_parallel`, and `max_turns` inputs (defaults: `10`, `2`, `50`). The workflow is named for the broader scope so future refresh targets (diagrams, more config files) can be added without renaming.
-3. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy and all phase commands.
+3. **Weekly release reconciliation** — `.github/workflows/release-reconcile.yaml` diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the `pipelines` tag-push delivery path so a "bumped but never released" gap (a bump whose `main` run failed the quality gate) is recovered. Enumerates repos via `go run ./cmd/harden-repos --list-json`, delegates detection to the single-sourced `pipelines` primitive `global/scripts/shared/reconcile-releases.sh` (cloned at run time), and orchestrates via `scripts/reconcile-repos.sh`. Pushes with the `CLAUDE_MD_REFRESH_TOKEN` PAT (a `GITHUB_TOKEN`-pushed tag would not start delivery). `workflow_dispatch` exposes `repo`, `dry_run`, and `fail_on_gap` inputs; results go to `$GITHUB_STEP_SUMMARY`.
+4. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy and all phase commands.
 
 ## Architecture
 
@@ -30,7 +31,7 @@ config-automation/
 │   └── domain/
 │       ├── builders/               # `RepositoryBuilder`, `AuditResultBuilder`
 │       └── doubles/repositories/   # in-memory doubles preferred over `testify/mock`
-├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `default.yaml`, `claude-code-review.yaml`, `claude.yaml`
+├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`, `default.yaml`, `claude-code-review.yaml`, `claude.yaml`
 └── scripts/
     └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
@@ -86,7 +87,7 @@ Workflow secrets: `COMPLIANCE_AUDIT_TOKEN` (daily audit), `CLAUDE_MD_REFRESH_TOK
 - **YAML files** — `.yaml` (never `.yml`); single-quote string values except where variable interpolation requires double quotes; never quote booleans or numbers.
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
 - **Changelog** — every change lands under `[Unreleased]` in `CHANGELOG.md` in the same commit. Keep a Changelog format. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.
-- **Actions pins** — keep every workflow on the same latest major. Current pins: `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-go@v6`, `actions/setup-node@v6`. Bump across both scheduled workflows in the same commit. The `@anthropic-ai/claude-code` npm package is pinned implicitly to `latest` via `npm install -g`.
+- **Actions pins** — keep every workflow on the same latest major. Current pins: `actions/checkout@v6`, `actions/upload-artifact@v7`, `actions/setup-go@v6`, `actions/setup-node@v6`. Bump across all three scheduled workflows (`repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`) in the same commit. The `@anthropic-ai/claude-code` npm package is pinned implicitly to `latest` via `npm install -g`.
 - **Go toolchain** — every `actions/setup-go` step uses `go-version-file: 'go.mod'`, never a hardcoded `go-version`. `setup-go` exports `GOTOOLCHAIN=local`, so a loose spec like `'1.26'` resolves to whatever patch release the runner cached and then hard-fails every `go run` once `go.mod` requires a newer patch. Bumping `go.mod` is enough; the workflows follow.
 
 ## When Editing the Policy

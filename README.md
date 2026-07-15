@@ -14,6 +14,7 @@ Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github
 
 - **Repo compliance audit** — daily cron that fails CI if any `rios0rios0` repo drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags).
 - **Config and docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates the in-scope configuration and documentation files only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo. Today the in-scope set is `CLAUDE.md` and `.github/copilot-instructions.md`; the workflow is intentionally named for the broader scope so future targets (diagrams, additional config files) can be added without renaming.
+- **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the `CLAUDE_MD_REFRESH_TOKEN` PAT — no new secret required.
 
 ## Prerequisites
 
