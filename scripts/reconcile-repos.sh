@@ -41,8 +41,9 @@ SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 # `harden-repos --list-json`); otherwise list the owner's non-fork, non-archived
 # repos directly.
 if [ -z "${REPOS_JSON:-}" ]; then
-  REPOS_JSON="$(gh api "users/${OWNER}/repos?per_page=100&type=owner" --paginate \
-    --jq '[.[] | select(.fork == false and .archived == false) | {name: .name}]')"
+  # `gh repo list` resolves both user and org owners; the REST users/{owner}/repos
+  # endpoint 404s for an org. --source excludes forks, --no-archived excludes archived.
+  REPOS_JSON="$(gh repo list "$OWNER" --source --no-archived --limit 1000 --json name)"
 fi
 mapfile -t repos < <(printf '%s' "$REPOS_JSON" | jq -r '.[].name')
 
@@ -53,6 +54,7 @@ total_gaps=0
 recovered=0
 needs_review=0
 repos_with_gaps=0
+clone_failures=0
 
 for name in "${repos[@]}"; do
   [ -n "$name" ] || continue
@@ -61,7 +63,12 @@ for name in "${repos[@]}"; do
   # without downloading file blobs.
   if ! git clone --quiet --filter=blob:none \
        "https://x-access-token:${GH_TOKEN}@github.com/${OWNER}/${name}.git" "$dir" 2>/dev/null; then
+    # A repo we could not clone was never scanned — surface it and count it toward
+    # needs_review so FAIL_ON_GAP cannot pass while a repo went unchecked.
     echo "  skip ${name}: clone failed"
+    clone_failures=$((clone_failures + 1))
+    needs_review=$((needs_review + 1))
+    rows+=("| \`${name}\` | — | — | clone failed — not scanned |")
     continue
   fi
   git -C "$dir" fetch --quiet --tags 2>/dev/null || true
@@ -99,7 +106,7 @@ done
 {
   echo "# Release reconciliation"
   echo ""
-  echo "Scanned **${#repos[@]}** repo(s); **${repos_with_gaps}** had gaps — **${total_gaps}** version(s): **${recovered}** recovered, **${needs_review}** need review."
+  echo "Scanned **${#repos[@]}** repo(s) (**${clone_failures}** failed to clone, not scanned); **${repos_with_gaps}** had gaps — **${total_gaps}** version(s): **${recovered}** recovered, **${needs_review}** need review."
   echo ""
   if [ "${#rows[@]}" -gt 0 ]; then
     echo "| Repo | Version | Bump commit | Action |"

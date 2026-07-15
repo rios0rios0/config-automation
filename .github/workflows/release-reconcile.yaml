@@ -73,7 +73,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${REPO_INPUT}" ]; then
-            REPOS_JSON="$(printf '[{"name":"%s"}]' "${REPO_INPUT}")"
+            # Build the single-repo JSON with jq so a name containing quotes or
+            # newlines cannot break out of the string and target other repos.
+            REPOS_JSON="$(jq -cn --arg n "${REPO_INPUT}" '[{name: $n}]')"
           else
             REPOS_JSON="$(go run ./cmd/harden-repos --list-json)"
           fi
