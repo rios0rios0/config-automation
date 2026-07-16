@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
 ### Added
 
 - added a weekly **release reconciliation** workflow (`.github/workflows/release-reconcile.yaml` + `scripts/reconcile-repos.sh`) that diffs every `rios0rios0` repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path so a bump whose `main` run failed the quality gate ("bumped but never released") is recovered automatically. Gap detection is delegated to the single-sourced pipelines primitive `global/scripts/shared/reconcile-releases.sh` (cloned at run time rather than vendored); the job enumerates repos via `harden-repos --list-json`, pushes recovery tags with the `CLAUDE_MD_REFRESH_TOKEN` PAT (a `GITHUB_TOKEN`-pushed tag would not re-trigger delivery), and writes a consolidated `$GITHUB_STEP_SUMMARY`. Supports `workflow_dispatch` with `repo`, `dry_run`, and `fail_on_gap` inputs; runs Mondays 08:00 UTC after the compliance audit and config/docs refresh
