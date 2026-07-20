@@ -16,6 +16,8 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-20
+
 ### Changed
 
 - refreshed `CLAUDE.md` and `.github/copilot-instructions.md` to correct the Actions-pins convention, which still described bare-tag pins (`actions/checkout@v6`) even though the workflows have been pinned to full commit SHAs with `# vX.Y.Z` comments since `0.3.8`
