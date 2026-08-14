@@ -16,11 +16,13 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-14
+
 ### Added
 
-- added the `medhub-tech` and `prefy` organizations to the maintenance scope, so the daily compliance audit, the weekly config-and-docs refresh, and the weekly release reconciliation now cover them alongside `rios0rios0`
-- added multi-owner support to `harden-repos`: `HARDEN_OWNER` is now a comma-separated list that every phase walks in order, with whitespace trimmed, blank entries dropped, and duplicates collapsed
 - added `Repository.QualifiedName()`, the `owner/name` slug used by the audit table, the non-compliance report, and the phase 5 diff, since repository names are only unique within a single owner
+- added multi-owner support to `harden-repos`: `HARDEN_OWNER` is now a comma-separated list that every phase walks in order, with whitespace trimmed, blank entries dropped, and duplicates collapsed
+- added the `medhub-tech` and `prefy` organizations to the maintenance scope, so the daily compliance audit, the weekly config-and-docs refresh, and the weekly release reconciliation now cover them alongside `rios0rios0`
 - added the `owner` field to every `--list-json` entry, so the refresh matrix and the release-reconcile script clone the right organization instead of assuming one
 
 ### Changed
