@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Target a single repo (optional; defaults to all non-fork non-archived).'
+        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional; defaults to all non-fork non-archived across every owner).'
         required: false
         type: 'string'
       dry_run:
@@ -34,17 +34,18 @@ concurrency:
 
 jobs:
   reconcile:
-    name: 'Reconcile releases across all rios0rios0 repos'
+    name: 'Reconcile releases across every configured owner'
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
     env:
-      # Fine-grained PAT with Contents: write across the org — it lists the repos
-      # and pushes the recovery tags. It MUST be a PAT, not the ephemeral
-      # GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN does not start the delivery
-      # workflow, so the release would not be re-cut.
+      # Fine-grained PAT with Contents: write across every configured owner — it
+      # lists the repos and pushes the recovery tags. It MUST be a PAT, not the
+      # ephemeral GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN does not start the
+      # delivery workflow, so the release would not be re-cut.
       GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN || secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
-      HARDEN_OWNER: 'rios0rios0'
+      # Comma-separated list of owners to reconcile, walked in order.
+      HARDEN_OWNER: 'rios0rios0,medhub-tech,prefy'
     steps:
       - name: 'Checkout config-automation'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
@@ -73,9 +74,18 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${REPO_INPUT}" ]; then
-            # Build the single-repo JSON with jq so a name containing quotes or
-            # newlines cannot break out of the string and target other repos.
-            REPOS_JSON="$(jq -cn --arg n "${REPO_INPUT}" '[{name: $n}]')"
+            # Accepts `owner/name` so any configured owner is reachable; a bare
+            # `name` defaults to the first owner in the list. Built with jq so a
+            # name containing quotes or newlines cannot break out of the string
+            # and target other repos.
+            case "${REPO_INPUT}" in
+              */*) TARGET="${REPO_INPUT}" ;;
+              *)   TARGET="${HARDEN_OWNER%%,*}/${REPO_INPUT}" ;;
+            esac
+            REPOS_JSON="$(jq -cn \
+              --arg o "${TARGET%%/*}" \
+              --arg n "${TARGET#*/}" \
+              '[{owner: $o, name: $n}]')"
           else
             REPOS_JSON="$(go run ./cmd/harden-repos --list-json)"
           fi

@@ -18,7 +18,9 @@ type ReportComplianceChangesInput struct {
 	After  []entities.AuditResult
 }
 
-// ComplianceDiff is one changed field on one repo.
+// ComplianceDiff is one changed field on one repo. Repository holds the
+// `owner/name` slug, so a diff stays unambiguous when the audit covers
+// several owners.
 type ComplianceDiff struct {
 	Repository string
 	Field      string
@@ -36,16 +38,20 @@ func (c ReportComplianceChangesCommand) Execute(
 	input ReportComplianceChangesInput,
 	listeners ReportComplianceChangesListeners,
 ) {
-	beforeByName := make(map[string]entities.AuditResult, len(input.Before))
+	// Keyed by the `owner/name` slug rather than the bare name: two owners
+	// can host repos with the same name, and matching those against each
+	// other would report one org's drift as the other's.
+	beforeByQualifiedName := make(map[string]entities.AuditResult, len(input.Before))
 	for _, a := range input.Before {
-		beforeByName[a.Repository.Name] = a
+		beforeByQualifiedName[a.Repository.QualifiedName()] = a
 	}
 
 	diffs := make([]ComplianceDiff, 0)
 	reposChanged := map[string]struct{}{}
 
 	for _, after := range input.After {
-		before, ok := beforeByName[after.Repository.Name]
+		qualifiedName := after.Repository.QualifiedName()
+		before, ok := beforeByQualifiedName[qualifiedName]
 		if !ok {
 			continue
 		}
@@ -53,7 +59,7 @@ func (c ReportComplianceChangesCommand) Execute(
 		if len(repoDiffs) == 0 {
 			continue
 		}
-		reposChanged[after.Repository.Name] = struct{}{}
+		reposChanged[qualifiedName] = struct{}{}
 		diffs = append(diffs, repoDiffs...)
 	}
 
@@ -70,7 +76,7 @@ func diffAudits(before, after entities.AuditResult) []ComplianceDiff {
 }
 
 func diffRepoSettings(before, after entities.AuditResult) []ComplianceDiff {
-	name := after.Repository.Name
+	name := after.Repository.QualifiedName()
 	diffs := make([]ComplianceDiff, 0)
 	diffs = appendBoolDiff(diffs, name, "delete_branch_on_merge",
 		before.Repository.Settings.DeleteBranchOnMerge, after.Repository.Settings.DeleteBranchOnMerge)
@@ -84,7 +90,7 @@ func diffRepoSettings(before, after entities.AuditResult) []ComplianceDiff {
 }
 
 func diffSecurity(before, after entities.AuditResult) []ComplianceDiff {
-	name := after.Repository.Name
+	name := after.Repository.QualifiedName()
 	diffs := make([]ComplianceDiff, 0)
 	diffs = appendStringDiff(diffs, name, "secret_scanning",
 		before.Security.SecretScanning, after.Security.SecretScanning)
@@ -98,7 +104,7 @@ func diffSecurity(before, after entities.AuditResult) []ComplianceDiff {
 }
 
 func diffBranchProtection(before, after entities.AuditResult) []ComplianceDiff {
-	name := after.Repository.Name
+	name := after.Repository.QualifiedName()
 	diffs := make([]ComplianceDiff, 0)
 	diffs = appendBoolDiff(diffs, name, "protection_enabled",
 		before.BranchProtection.Enabled, after.BranchProtection.Enabled)
@@ -112,7 +118,7 @@ func diffBranchProtection(before, after entities.AuditResult) []ComplianceDiff {
 }
 
 func diffRuleset(before, after entities.AuditResult) []ComplianceDiff {
-	name := after.Repository.Name
+	name := after.Repository.QualifiedName()
 	diffs := make([]ComplianceDiff, 0)
 	diffs = appendBoolDiff(diffs, name, "has_force_push_ruleset",
 		before.HasForcePushRuleset(), after.HasForcePushRuleset())

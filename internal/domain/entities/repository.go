@@ -26,6 +26,18 @@ type RepositorySettings struct {
 	HasProjects         bool
 }
 
+// QualifiedName returns the `owner/name` slug that identifies this repo
+// across owners. Once an audit spans more than one owner a bare name is
+// ambiguous — two organizations can each host a `guide` — so reports,
+// snapshots, and diffs key on this instead. Falls back to the bare name
+// when the owner is unknown.
+func (r Repository) QualifiedName() string {
+	if r.Owner == "" {
+		return r.Name
+	}
+	return r.Owner + "/" + r.Name
+}
+
 // IsForkOrArchived reports whether this repo is effectively excluded from
 // Dependabot / secret scanning enforcement because upstream syncs wipe the
 // state (fork) or the repo is frozen (archived).

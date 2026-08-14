@@ -8,11 +8,13 @@
         <img src="https://img.shields.io/github/actions/workflow/status/rios0rios0/config-automation/repo-compliance-audit.yaml?branch=main&style=for-the-badge&logo=github&label=compliance" alt="Compliance Audit Status"/></a>
 </p>
 
-Scheduled GitHub Actions workflows that keep every [`rios0rios0`](https://github.com/rios0rios0) repository compliant with shared hardening policy and in sync with the team's configuration and documentation files.
+Scheduled GitHub Actions workflows that keep every repository under [`rios0rios0`](https://github.com/rios0rios0), [`medhub-tech`](https://github.com/medhub-tech), and [`prefy`](https://github.com/prefy) compliant with shared hardening policy and in sync with the team's configuration and documentation files.
+
+The owners are configured through the `HARDEN_OWNER` environment variable, which every workflow sets to a comma-separated list. Adding an organization means extending that list — no code change needed. Because repository names are only unique within one owner, reports, snapshots, and diffs key on the `owner/name` slug.
 
 ## Features
 
-- **Repo compliance audit** — daily cron that fails CI if any `rios0rios0` repo drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags).
+- **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags).
 - **Config and docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates the in-scope configuration and documentation files only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo. Today the in-scope set is `CLAUDE.md` and `.github/copilot-instructions.md`; the workflow is intentionally named for the broader scope so future targets (diagrams, additional config files) can be added without renaming.
 - **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the `CLAUDE_MD_REFRESH_TOKEN` PAT — no new secret required.
 
@@ -22,8 +24,8 @@ Three repository secrets must be set on `rios0rios0/config-automation`:
 
 | Secret                    | Purpose                                                                                                | Scope                                                                                                                                                                                                                                       |
 |---------------------------|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `COMPLIANCE_AUDIT_TOKEN`  | Lists all `rios0rios0` repos and reads security/ruleset endpoints for the daily audit.                 | Classic PAT with the `repo` scope, **or** fine-grained PAT scoped to all repositories under `rios0rios0` with read access to `Administration`, `Contents`, `Metadata`, `Webhooks`, and to `Dependabot alerts` and `Secret scanning alerts`. |
-| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/config-and-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under `rios0rios0` with `Contents: write`, `Pull requests: write`, and `Metadata: read`.                                                                                                        |
+| `COMPLIANCE_AUDIT_TOKEN`  | Lists the repos of every configured owner and reads security/ruleset endpoints for the daily audit.    | Classic PAT with the `repo` scope, **or** fine-grained PAT scoped to all repositories under **every** owner in `HARDEN_OWNER` with read access to `Administration`, `Contents`, `Metadata`, `Webhooks`, and to `Dependabot alerts` and `Secret scanning alerts`. A missing owner grant fails the whole audit rather than silently skipping that owner. |
+| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/config-and-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under **every** owner in `HARDEN_OWNER` with `Contents: write`, `Pull requests: write`, and `Metadata: read`.                                                                                    |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Authenticates `anthropics/claude-code-action@v1` during the refresh.                                   | Claude Code OAuth token.                                                                                                                                                                                                                    |
 
 Set them with:
@@ -38,10 +40,12 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN -R rios0rios0/config-automation
 
 Both workflows run on cron; no manual action is needed in steady state.
 
-Manual trigger — one-off config-and-docs refresh against a single repo:
+Manual trigger — one-off config-and-docs refresh against a single repo. Pass
+`owner/name` to reach any configured owner; a bare name uses the first one:
 
 ```bash
 gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
+gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=medhub-tech/frontend
 ```
 
 Manual trigger — compliance audit on demand:
@@ -54,21 +58,22 @@ Locally, the CLI supports the full phase model:
 
 ```bash
 # Audit-only (read-only, writes /tmp/gh_hardening_audit_before.json)
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 1
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 1
 
-# Apply phases locally (mutates)
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 2 --repo <name>
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 3 --repo <name>
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 4 --repo <name>
+# Apply phases locally (mutates). --repo matches the bare name in every
+# configured owner, so narrow HARDEN_OWNER when a name is not unique.
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 2 --repo <name>
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 3 --repo <name>
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 4 --repo <name>
 
 # Preview every phase without mutating anything
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --dry-run
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --dry-run
 
 # List target repos for the config-and-docs refresh matrix (JSON on stdout)
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --list-json
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --list-json
 
 # Re-audit and diff against the before snapshot
-HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 5
+HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 5
 ```
 
 ## Architecture
