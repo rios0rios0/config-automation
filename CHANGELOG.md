@@ -26,6 +26,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 ### Changed
 
 - changed `workflow_dispatch`'s `repo` input on the config-and-docs refresh and release reconciliation workflows to accept `owner/name`; a bare name still resolves against the first configured owner
+- changed the Go version to `1.26.6` and updated all module dependencies
 
 ### Fixed
 

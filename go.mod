@@ -1,10 +1,10 @@
 module github.com/rios0rios0/config-automation
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/google/go-github/v66 v66.0.0
-	github.com/sirupsen/logrus v1.9.4
+	github.com/sirupsen/logrus v1.10.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/dig v1.19.0
 	golang.org/x/oauth2 v0.36.0
