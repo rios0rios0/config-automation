@@ -16,6 +16,21 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Added
+
+- added the `medhub-tech` and `prefy` organizations to the maintenance scope, so the daily compliance audit, the weekly config-and-docs refresh, and the weekly release reconciliation now cover them alongside `rios0rios0`
+- added multi-owner support to `harden-repos`: `HARDEN_OWNER` is now a comma-separated list that every phase walks in order, with whitespace trimmed, blank entries dropped, and duplicates collapsed
+- added `Repository.QualifiedName()`, the `owner/name` slug used by the audit table, the non-compliance report, and the phase 5 diff, since repository names are only unique within a single owner
+- added the `owner` field to every `--list-json` entry, so the refresh matrix and the release-reconcile script clone the right organization instead of assuming one
+
+### Changed
+
+- changed `workflow_dispatch`'s `repo` input on the config-and-docs refresh and release reconciliation workflows to accept `owner/name`; a bare name still resolves against the first configured owner
+
+### Fixed
+
+- fixed the phase 5 compliance report matching repositories by bare name, which made two owners sharing a repository name diff against each other — reporting drift on a fleet that had not changed, and attributing one owner's changes to the other's repository
+
 ## [0.5.1] - 2026-07-22
 
 ### Changed

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Target a single repo (optional, defaults to all non-fork non-archived).'
+        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner).'
         required: false
         type: 'string'
       batch_size:
@@ -37,7 +37,8 @@ jobs:
     permissions:
       contents: 'read'
     env:
-      HARDEN_OWNER: 'rios0rios0'
+      # Comma-separated list of owners to enumerate, walked in order.
+      HARDEN_OWNER: 'rios0rios0,medhub-tech,prefy'
     outputs:
       matrix: ${{ steps.build-matrix.outputs.matrix }}
       count: ${{ steps.build-matrix.outputs.count }}
@@ -86,9 +87,23 @@ jobs:
           if [ -n "${REPO_INPUT}" ]; then
             # Single-repo override for workflow_dispatch testing. Uses gh's
             # built-in `gh api` so we don't spin up the Go binary just to
-            # fetch one default_branch.
-            default_branch=$(gh api "/repos/${HARDEN_OWNER}/${REPO_INPUT}" --jq '.default_branch')
-            repos=$(printf '[{"name":"%s","default_branch":"%s"}]' "${REPO_INPUT}" "${default_branch}")
+            # fetch one default_branch. Accepts `owner/name` so any
+            # configured owner is reachable; a bare `name` keeps the old
+            # ergonomics by defaulting to the first owner in the list.
+            case "${REPO_INPUT}" in
+              */*) target="${REPO_INPUT}" ;;
+              *)   target="${HARDEN_OWNER%%,*}/${REPO_INPUT}" ;;
+            esac
+            target_owner="${target%%/*}"
+            target_name="${target#*/}"
+            default_branch=$(gh api "/repos/${target}" --jq '.default_branch')
+            # Built with `jq -n` rather than printf so a name containing
+            # quotes cannot break out of the JSON string.
+            repos=$(jq -cn \
+              --arg o "${target_owner}" \
+              --arg n "${target_name}" \
+              --arg b "${default_branch}" \
+              '[{owner: $o, name: $n, default_branch: $b}]')
           else
             repos=$(go run ./cmd/harden-repos --list-json)
           fi
@@ -154,7 +169,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          HARDEN_OWNER: 'rios0rios0'
+          # No HARDEN_OWNER here: every repo in the matrix carries its own
+          # `owner`, so this job never has to guess which one it belongs to.
           REFRESH_BRANCH: 'chore/config-and-docs-refresh'
           REPOS: ${{ toJSON(matrix.batch.repos) }}
           MAX_TURNS: ${{ inputs.max_turns || '50' }}
@@ -179,10 +195,14 @@ jobs:
           # outside the loop body.
           while IFS= read -r repo_json; do
             idx=$((idx + 1))
+            repo_owner=$(echo "${repo_json}" | jq -r '.owner')
             repo_name=$(echo "${repo_json}" | jq -r '.name')
             default_branch=$(echo "${repo_json}" | jq -r '.default_branch')
-            target_repo="${HARDEN_OWNER}/${repo_name}"
-            target="${WORK_DIR}/${repo_name}"
+            target_repo="${repo_owner}/${repo_name}"
+            # Checkout directory keyed by owner too: two owners can host a
+            # repo of the same name, and a bare-name path would make the
+            # second clone collide with the first inside one batch.
+            target="${WORK_DIR}/${repo_owner}__${repo_name}"
 
             # If a previous iteration tripped the org's monthly Claude
             # usage limit, skip the rest of the batch --- subsequent claude

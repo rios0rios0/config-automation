@@ -28,7 +28,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    ```
 5. If your change touches `cmd/harden-repos/`, also run a single-repo audit against a safe target:
    ```bash
-   HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 1 --repo autobump
+   HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 1 --repo autobump
    ```
 6. Update `CHANGELOG.md` under `[Unreleased]` in the same commit that introduces the change.
 7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `CLAUDE.md` and `README.md` to match.
