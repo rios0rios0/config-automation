@@ -16,6 +16,22 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Fixed
+
+- fixed every scheduled workflow aborting before it reached `prefy`: a fine-grained PAT is bound to a single resource owner, so the shared token was rejected by `medhub-tech` with `403 ... forbids access via a fine-grained personal access tokens if the token's lifetime is greater than 366 days`, and because the CLI treats a listing failure for any owner as fatal, the run died on the second owner and never attempted the third — the daily audit, the weekly config/docs refresh and the weekly release reconciliation all failed this way
+- fixed the daily audit reporting an authentication error where it used to report compliance drift, by auditing each owner in its own job so one owner's rejected grant no longer masks the others' results
+
+### Changed
+
+- changed all three scheduled workflows to fan out into one job per owner via `strategy.matrix.owner` with `fail-fast: false`, each job setting `HARDEN_OWNER` to its own owner and authenticating with that owner's own fine-grained PAT
+- changed `config-and-docs-refresh` to enumerate each owner separately and continue past an unreachable one, so the reachable owners are still refreshed, and to batch repositories within an owner so every matrix leg carries exactly one credential
+- changed the compliance audit's artifact name to include the owner, since one artifact name per run collided once the job fanned out
+
+### Added
+
+- added a terminal `verify` job to `config-and-docs-refresh` that fails the run when any owner could not be enumerated, so tolerating a broken owner never passes as a fully green fleet refresh
+- added per-owner secrets `MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN`, `PREFY_COMPLIANCE_AUDIT_TOKEN`, `MEDHUB_TECH_REFRESH_TOKEN` and `PREFY_REFRESH_TOKEN`, documented in `README.md` alongside the 366-day lifetime limit both organizations enforce
+
 ## [0.6.1] - 2026-08-17
 
 ### Changed

@@ -12,10 +12,25 @@ concurrency:
 
 jobs:
   audit:
-    name: 'Audit every configured owner'
+    name: 'Audit ${{ matrix.owner.name }}'
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
+    strategy:
+      # A fine-grained PAT is bound to a single resource owner, so one token can never span
+      # every owner. The CLI also treats a listing failure for any owner as fatal, so a
+      # single shared token turned one rejected grant into "no owner gets audited" --- and
+      # the owners after it in the list were never even attempted. One job per owner keeps
+      # each owner's credential, and each owner's failure, to itself.
+      fail-fast: false
+      matrix:
+        owner:
+          - name: 'rios0rios0'
+            secret: 'COMPLIANCE_AUDIT_TOKEN'
+          - name: 'medhub-tech'
+            secret: 'MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN'
+          - name: 'prefy'
+            secret: 'PREFY_COMPLIANCE_AUDIT_TOKEN'
     env:
       # Personal access token exposed as GH_TOKEN for the Go client's
       # HTTP calls (and the pagination logic in the list endpoint).
@@ -26,13 +41,13 @@ jobs:
       # GITHUB_TOKEN if the secret is not set (cross-repo calls will
       # fail).
       #
-      # The token must reach every owner listed in HARDEN_OWNER: the CLI
-      # treats a listing failure for any single owner as fatal, so a
-      # missing organization grant fails the whole audit rather than
-      # silently reporting a partial fleet as compliant.
-      GH_TOKEN: ${{ secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
-      # Comma-separated list of owners to audit, walked in order.
-      HARDEN_OWNER: 'rios0rios0,medhub-tech,prefy'
+      # Each job authenticates as the owner it audits. The token's lifetime must be
+      # 366 days or less: `medhub-tech` and `prefy` reject longer-lived fine-grained
+      # tokens with `403 ... forbids access via a fine-grained personal access tokens
+      # if the token's lifetime is greater than 366 days`.
+      GH_TOKEN: ${{ secrets[matrix.owner.secret] || secrets.GITHUB_TOKEN }}
+      # This job audits exactly one owner; the fan-out lives in the matrix above.
+      HARDEN_OWNER: ${{ matrix.owner.name }}
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
@@ -56,7 +71,7 @@ jobs:
         if: always()
         uses: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' # v7.0.1
         with:
-          name: 'compliance-audit-${{ github.run_number }}'
+          name: 'compliance-audit-${{ github.run_number }}-${{ matrix.owner.name }}'
           path: '/tmp/gh_hardening_audit_before.json'
           if-no-files-found: 'ignore'
           retention-days: 30
