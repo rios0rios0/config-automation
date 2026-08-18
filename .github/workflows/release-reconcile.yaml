@@ -47,21 +47,18 @@ jobs:
       matrix:
         owner:
           - name: 'rios0rios0'
-            secret: 'CLAUDE_MD_REFRESH_TOKEN'
-            fallback_secret: 'COMPLIANCE_AUDIT_TOKEN'
+            secret: 'PERSONAL_ACCESS_TOKEN'
           - name: 'medhub-tech'
-            secret: 'MEDHUB_TECH_REFRESH_TOKEN'
-            fallback_secret: 'MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN'
+            secret: 'MEDHUB_ACCESS_TOKEN'
           - name: 'prefy'
-            secret: 'PREFY_REFRESH_TOKEN'
-            fallback_secret: 'PREFY_COMPLIANCE_AUDIT_TOKEN'
+            secret: 'PREFY_ACCESS_TOKEN'
     env:
       # Fine-grained PAT with Contents: write on this job's owner — it lists the repos
       # and pushes the recovery tags. It MUST be a PAT, not the ephemeral GITHUB_TOKEN:
       # a tag pushed with GITHUB_TOKEN does not start the delivery workflow, so the
       # release would not be re-cut. The token's lifetime must be 366 days or less;
       # `medhub-tech` and `prefy` reject longer-lived fine-grained tokens with a 403.
-      GH_TOKEN: ${{ secrets[matrix.owner.secret] || secrets[matrix.owner.fallback_secret] || secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets[matrix.owner.secret] || secrets.GITHUB_TOKEN }}
       # This job reconciles exactly one owner; the fan-out lives in the matrix above.
       HARDEN_OWNER: ${{ matrix.owner.name }}
       # A bare `repo` input keeps its old ergonomics by resolving against this owner.

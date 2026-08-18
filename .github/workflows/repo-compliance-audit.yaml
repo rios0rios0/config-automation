@@ -26,25 +26,25 @@ jobs:
       matrix:
         owner:
           - name: 'rios0rios0'
-            secret: 'COMPLIANCE_AUDIT_TOKEN'
+            secret: 'PERSONAL_ACCESS_TOKEN'
           - name: 'medhub-tech'
-            secret: 'MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN'
+            secret: 'MEDHUB_ACCESS_TOKEN'
           - name: 'prefy'
-            secret: 'PREFY_COMPLIANCE_AUDIT_TOKEN'
+            secret: 'PREFY_ACCESS_TOKEN'
     env:
-      # Personal access token exposed as GH_TOKEN for the Go client's
-      # HTTP calls (and the pagination logic in the list endpoint).
-      # If using a classic PAT, grant `repo` plus any required admin
-      # access. If using a fine-grained PAT, grant the repository
-      # permissions needed to list private repos and read
-      # ruleset/security-related endpoints. Falls back to the default
-      # GITHUB_TOKEN if the secret is not set (cross-repo calls will
-      # fail).
+      # The owner's personal access token, exposed as GH_TOKEN for the Go client's HTTP
+      # calls (and the pagination logic in the list endpoint). One token per owner covers
+      # all three scheduled workflows, so it needs the union of what they do: read access
+      # to `Administration`, `Metadata`, `Webhooks`, `Dependabot alerts` and
+      # `Secret scanning alerts` for this audit, plus `Contents: write` and
+      # `Pull requests: write` for the refresh and reconcile jobs.
       #
-      # Each job authenticates as the owner it audits. The token's lifetime must be
-      # 366 days or less: `medhub-tech` and `prefy` reject longer-lived fine-grained
-      # tokens with `403 ... forbids access via a fine-grained personal access tokens
-      # if the token's lifetime is greater than 366 days`.
+      # The token's lifetime must be 366 days or less: `medhub-tech` and `prefy` reject
+      # longer-lived fine-grained tokens with `403 ... forbids access via a fine-grained
+      # personal access tokens if the token's lifetime is greater than 366 days`.
+      #
+      # Falls back to the default GITHUB_TOKEN if the secret is not set, which can only
+      # ever reach the current repository (cross-repo calls will fail).
       GH_TOKEN: ${{ secrets[matrix.owner.secret] || secrets.GITHUB_TOKEN }}
       # This job audits exactly one owner; the fan-out lives in the matrix above.
       HARDEN_OWNER: ${{ matrix.owner.name }}
