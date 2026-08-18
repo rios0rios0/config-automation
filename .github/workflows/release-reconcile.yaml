@@ -34,18 +34,38 @@ concurrency:
 
 jobs:
   reconcile:
-    name: 'Reconcile releases across every configured owner'
+    name: 'Reconcile releases for ${{ matrix.owner.name }}'
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
+    strategy:
+      # A fine-grained PAT is bound to a single resource owner, so one token can never span
+      # every owner, and the CLI treats a listing failure for any owner as fatal. One job
+      # per owner keeps a rejected grant from aborting the run before the remaining owners
+      # are even attempted.
+      fail-fast: false
+      matrix:
+        owner:
+          - name: 'rios0rios0'
+            secret: 'CLAUDE_MD_REFRESH_TOKEN'
+            fallback_secret: 'COMPLIANCE_AUDIT_TOKEN'
+          - name: 'medhub-tech'
+            secret: 'MEDHUB_TECH_REFRESH_TOKEN'
+            fallback_secret: 'MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN'
+          - name: 'prefy'
+            secret: 'PREFY_REFRESH_TOKEN'
+            fallback_secret: 'PREFY_COMPLIANCE_AUDIT_TOKEN'
     env:
-      # Fine-grained PAT with Contents: write across every configured owner — it
-      # lists the repos and pushes the recovery tags. It MUST be a PAT, not the
-      # ephemeral GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN does not start the
-      # delivery workflow, so the release would not be re-cut.
-      GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN || secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
-      # Comma-separated list of owners to reconcile, walked in order.
-      HARDEN_OWNER: 'rios0rios0,medhub-tech,prefy'
+      # Fine-grained PAT with Contents: write on this job's owner — it lists the repos
+      # and pushes the recovery tags. It MUST be a PAT, not the ephemeral GITHUB_TOKEN:
+      # a tag pushed with GITHUB_TOKEN does not start the delivery workflow, so the
+      # release would not be re-cut. The token's lifetime must be 366 days or less;
+      # `medhub-tech` and `prefy` reject longer-lived fine-grained tokens with a 403.
+      GH_TOKEN: ${{ secrets[matrix.owner.secret] || secrets[matrix.owner.fallback_secret] || secrets.GITHUB_TOKEN }}
+      # This job reconciles exactly one owner; the fan-out lives in the matrix above.
+      HARDEN_OWNER: ${{ matrix.owner.name }}
+      # A bare `repo` input keeps its old ergonomics by resolving against this owner.
+      DEFAULT_OWNER: 'rios0rios0'
     steps:
       - name: 'Checkout config-automation'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
@@ -75,13 +95,19 @@ jobs:
           set -euo pipefail
           if [ -n "${REPO_INPUT}" ]; then
             # Accepts `owner/name` so any configured owner is reachable; a bare
-            # `name` defaults to the first owner in the list. Built with jq so a
-            # name containing quotes or newlines cannot break out of the string
-            # and target other repos.
+            # `name` defaults to DEFAULT_OWNER. Built with jq so a name containing
+            # quotes or newlines cannot break out of the string and target other
+            # repos.
             case "${REPO_INPUT}" in
               */*) TARGET="${REPO_INPUT}" ;;
-              *)   TARGET="${HARDEN_OWNER%%,*}/${REPO_INPUT}" ;;
+              *)   TARGET="${DEFAULT_OWNER}/${REPO_INPUT}" ;;
             esac
+            # The matrix runs one job per owner, so the legs that do not own the
+            # requested repo have nothing to do.
+            if [ "${TARGET%%/*}" != "${HARDEN_OWNER}" ]; then
+              echo "Skipping ${HARDEN_OWNER}: '${TARGET}' belongs to another owner."
+              exit 0
+            fi
             REPOS_JSON="$(jq -cn \
               --arg o "${TARGET%%/*}" \
               --arg n "${TARGET#*/}" \

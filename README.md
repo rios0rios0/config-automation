@@ -10,31 +10,57 @@
 
 Scheduled GitHub Actions workflows that keep every repository under [`rios0rios0`](https://github.com/rios0rios0), [`medhub-tech`](https://github.com/medhub-tech), and [`prefy`](https://github.com/prefy) compliant with shared hardening policy and in sync with the team's configuration and documentation files.
 
-The owners are configured through the `HARDEN_OWNER` environment variable, which every workflow sets to a comma-separated list. Adding an organization means extending that list — no code change needed. Because repository names are only unique within one owner, reports, snapshots, and diffs key on the `owner/name` slug.
+The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-separated list. The workflows do **not** pass all owners at once: a GitHub fine-grained PAT is bound to a single resource owner, so each workflow fans out into one job per owner and hands that job only its own owner and its own token. Adding an organization means adding a matrix entry and its secret — no code change needed. Because repository names are only unique within one owner, reports, snapshots, and diffs key on the `owner/name` slug.
 
 ## Features
 
 - **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags).
 - **Config and docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates the in-scope configuration and documentation files only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo. Today the in-scope set is `CLAUDE.md` and `.github/copilot-instructions.md`; the workflow is intentionally named for the broader scope so future targets (diagrams, additional config files) can be added without renaming.
-- **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the `CLAUDE_MD_REFRESH_TOKEN` PAT — no new secret required.
+- **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the same per-owner refresh PATs — no new secret required.
 
 ## Prerequisites
 
-Three repository secrets must be set on `rios0rios0/config-automation`:
+A GitHub fine-grained PAT is bound to a **single** resource owner, so there is one audit token
+and one refresh token **per owner**, plus the shared Claude Code token:
 
-| Secret                    | Purpose                                                                                                | Scope                                                                                                                                                                                                                                       |
-|---------------------------|--------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `COMPLIANCE_AUDIT_TOKEN`  | Lists the repos of every configured owner and reads security/ruleset endpoints for the daily audit.    | Classic PAT with the `repo` scope, **or** fine-grained PAT scoped to all repositories under **every** owner in `HARDEN_OWNER` with read access to `Administration`, `Contents`, `Metadata`, `Webhooks`, and to `Dependabot alerts` and `Secret scanning alerts`. A missing owner grant fails the whole audit rather than silently skipping that owner. |
-| `CLAUDE_MD_REFRESH_TOKEN` | Pushes the `chore/config-and-docs-refresh` branch and opens PRs on each target repo during the weekly refresh. | Fine-grained PAT scoped to all repositories under **every** owner in `HARDEN_OWNER` with `Contents: write`, `Pull requests: write`, and `Metadata: read`.                                                                                    |
-| `CLAUDE_CODE_OAUTH_TOKEN` | Authenticates `anthropics/claude-code-action@v1` during the refresh.                                   | Claude Code OAuth token.                                                                                                                                                                                                                    |
+| Secret                                | Owner         | Purpose                                                                                                       |
+|---------------------------------------|---------------|---------------------------------------------------------------------------------------------------------------|
+| `COMPLIANCE_AUDIT_TOKEN`              | `rios0rios0`  | Lists the owner's repos and reads security/ruleset endpoints for the daily audit.                             |
+| `MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN`  | `medhub-tech` | Same, for `medhub-tech`.                                                                                      |
+| `PREFY_COMPLIANCE_AUDIT_TOKEN`        | `prefy`       | Same, for `prefy`.                                                                                            |
+| `CLAUDE_MD_REFRESH_TOKEN`             | `rios0rios0`  | Pushes the `chore/config-and-docs-refresh` branch, opens PRs, and pushes release-recovery tags.               |
+| `MEDHUB_TECH_REFRESH_TOKEN`           | `medhub-tech` | Same, for `medhub-tech`.                                                                                      |
+| `PREFY_REFRESH_TOKEN`                 | `prefy`       | Same, for `prefy`.                                                                                            |
+| `CLAUDE_CODE_OAUTH_TOKEN`             | —             | Authenticates the Claude Code CLI during the refresh.                                                         |
+
+Scopes, per owner:
+
+- **Audit tokens** — fine-grained PAT scoped to all repositories under that owner with read access
+  to `Administration`, `Contents`, `Metadata`, `Webhooks`, `Dependabot alerts`, and
+  `Secret scanning alerts`. A refresh token is used as the fallback when the audit token is unset.
+- **Refresh tokens** — fine-grained PAT scoped to all repositories under that owner with
+  `Contents: write`, `Pull requests: write`, and `Metadata: read`. Release reconciliation reuses
+  these, and the tag push must come from a PAT: a tag pushed with `GITHUB_TOKEN` does not start
+  the delivery workflow.
+
+Every fine-grained token's lifetime must be **366 days or less**. `medhub-tech` and `prefy` reject
+longer-lived fine-grained tokens with `403 ... forbids access via a fine-grained personal access
+tokens if the token's lifetime is greater than 366 days`.
 
 Set them with:
 
 ```bash
 gh secret set COMPLIANCE_AUDIT_TOKEN -R rios0rios0/config-automation
+gh secret set MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN -R rios0rios0/config-automation
+gh secret set PREFY_COMPLIANCE_AUDIT_TOKEN -R rios0rios0/config-automation
 gh secret set CLAUDE_MD_REFRESH_TOKEN -R rios0rios0/config-automation
+gh secret set MEDHUB_TECH_REFRESH_TOKEN -R rios0rios0/config-automation
+gh secret set PREFY_REFRESH_TOKEN -R rios0rios0/config-automation
 gh secret set CLAUDE_CODE_OAUTH_TOKEN -R rios0rios0/config-automation
 ```
+
+To cover another owner, add a `strategy.matrix.owner` entry (plus the matching `OWNERS` entry and
+`TOKEN_*` line in `config-and-docs-refresh.yaml`) and create its two secrets.
 
 ## Usage
 

@@ -37,11 +37,21 @@ jobs:
     permissions:
       contents: 'read'
     env:
-      # Comma-separated list of owners to enumerate, walked in order.
-      HARDEN_OWNER: 'rios0rios0,medhub-tech,prefy'
+      # Owners to enumerate, each paired with the secret holding its token. A
+      # fine-grained PAT is bound to a single resource owner, so one token can never
+      # span all of them; enumeration therefore runs once per owner with that owner's
+      # credential. Adding an owner means adding an entry here plus its `TOKEN_*` env
+      # line on the `Build matrix` step.
+      OWNERS: >-
+        [{"name": "rios0rios0", "secret": "CLAUDE_MD_REFRESH_TOKEN"},
+         {"name": "medhub-tech", "secret": "MEDHUB_TECH_REFRESH_TOKEN"},
+         {"name": "prefy", "secret": "PREFY_REFRESH_TOKEN"}]
+      # A bare `repo` input keeps its old ergonomics by resolving against this owner.
+      DEFAULT_OWNER: 'rios0rios0'
     outputs:
       matrix: ${{ steps.build-matrix.outputs.matrix }}
       count: ${{ steps.build-matrix.outputs.count }}
+      failed_owners: ${{ steps.build-matrix.outputs.failed_owners }}
     steps:
       - name: 'Checkout config-automation'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
@@ -66,12 +76,16 @@ jobs:
       - name: 'Build matrix'
         id: 'build-matrix'
         env:
-          # CLAUDE_MD_REFRESH_TOKEN is the fine-grained PAT owned by this workflow.
-          # Falls back to COMPLIANCE_AUDIT_TOKEN (shared read-only PAT) and finally to
-          # the ephemeral GITHUB_TOKEN, which can access the current repo per its
-          # permissions but generally cannot read metadata for other private repos.
-          # Scoped to this step only so the PAT isn't exposed to checkout/setup steps.
-          GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN || secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
+          # One fine-grained PAT per owner, looked up in the script as
+          # `TOKEN_<owner with '-' replaced by '_'>`. Each falls back to that owner's
+          # read-only audit PAT. Every token's lifetime must be 366 days or less:
+          # `medhub-tech` and `prefy` reject longer-lived fine-grained tokens with
+          # `403 ... forbids access via a fine-grained personal access tokens if the
+          # token's lifetime is greater than 366 days`.
+          # Scoped to this step only so the PATs aren't exposed to checkout/setup steps.
+          TOKEN_rios0rios0: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN || secrets.COMPLIANCE_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
+          TOKEN_medhub_tech: ${{ secrets.MEDHUB_TECH_REFRESH_TOKEN || secrets.MEDHUB_TECH_COMPLIANCE_AUDIT_TOKEN }}
+          TOKEN_prefy: ${{ secrets.PREFY_REFRESH_TOKEN || secrets.PREFY_COMPLIANCE_AUDIT_TOKEN }}
           REPO_INPUT: ${{ inputs.repo }}
           BATCH_SIZE: ${{ inputs.batch_size || 10 }}
         run: |
@@ -84,18 +98,34 @@ jobs:
             echo "Warning: invalid batch_size='${BATCH_SIZE}', falling back to 10." >&2
             BATCH_SIZE=10
           fi
+          # Resolves the per-owner PAT exposed as TOKEN_<owner with '-' replaced by '_'>.
+          owner_token() {
+            local var="TOKEN_${1//-/_}"
+            printf '%s' "${!var:-}"
+          }
+
+          # Resolves the secret NAME for an owner, so each batch can tell the refresh
+          # job which credential to clone and push with.
+          owner_secret() {
+            printf '%s' "${OWNERS}" | jq -r --arg o "$1" '.[] | select(.name == $o) | .secret'
+          }
+
+          failed_owners=()
+
           if [ -n "${REPO_INPUT}" ]; then
             # Single-repo override for workflow_dispatch testing. Uses gh's
             # built-in `gh api` so we don't spin up the Go binary just to
             # fetch one default_branch. Accepts `owner/name` so any
             # configured owner is reachable; a bare `name` keeps the old
-            # ergonomics by defaulting to the first owner in the list.
+            # ergonomics by defaulting to DEFAULT_OWNER.
             case "${REPO_INPUT}" in
               */*) target="${REPO_INPUT}" ;;
-              *)   target="${HARDEN_OWNER%%,*}/${REPO_INPUT}" ;;
+              *)   target="${DEFAULT_OWNER}/${REPO_INPUT}" ;;
             esac
             target_owner="${target%%/*}"
             target_name="${target#*/}"
+            GH_TOKEN="$(owner_token "${target_owner}")"
+            export GH_TOKEN
             default_branch=$(gh api "/repos/${target}" --jq '.default_branch')
             # Built with `jq -n` rather than printf so a name containing
             # quotes cannot break out of the JSON string.
@@ -103,25 +133,71 @@ jobs:
               --arg o "${target_owner}" \
               --arg n "${target_name}" \
               --arg b "${default_branch}" \
-              '[{owner: $o, name: $n, default_branch: $b}]')
+              --arg s "$(owner_secret "${target_owner}")" \
+              '[{owner: $o, name: $n, default_branch: $b, secret: $s}]')
           else
-            repos=$(go run ./cmd/harden-repos --list-json)
+            # `--list-json` treats a listing failure for any owner as fatal, so it runs
+            # once per owner with that owner's own token. A single shared token used to
+            # abort the whole enumeration on the first rejected grant, which silently
+            # dropped every owner after it in the list. Now an unreachable owner is
+            # recorded, the reachable ones are still refreshed, and the `verify` job
+            # turns the run red at the end so the gap cannot pass as success.
+            repos='[]'
+            while IFS= read -r owner; do
+              secret="$(owner_secret "${owner}")"
+              token="$(owner_token "${owner}")"
+              if [ -z "${token}" ]; then
+                echo "::error::No token for '${owner}': the '${secret}' secret is empty or not set."
+                failed_owners+=("${owner}")
+                continue
+              fi
+              if ! owner_repos=$(HARDEN_OWNER="${owner}" GH_TOKEN="${token}" \
+                go run ./cmd/harden-repos --list-json 2>"${RUNNER_TEMP}/${owner}.err"); then
+                echo "::error::Could not enumerate '${owner}', so none of its repositories will be refreshed."
+                sed 's/^/  /' "${RUNNER_TEMP}/${owner}.err" >&2
+                failed_owners+=("${owner}")
+                continue
+              fi
+              owner_repos="${owner_repos:-[]}"
+              repos=$(jq -cn \
+                --argjson acc "${repos}" \
+                --argjson add "${owner_repos}" \
+                --arg s "${secret}" \
+                '$acc + ($add | map(. + {secret: $s}))')
+              echo "Enumerated $(printf '%s' "${owner_repos}" | jq 'length') repo(s) in '${owner}'."
+            done < <(printf '%s' "${OWNERS}" | jq -r '.[].name')
           fi
-          matrix=$(echo "${repos}" | jq -c --argjson batchSize "${BATCH_SIZE}" '
-            . as $all
-            | [range(0; length; $batchSize) as $i
-               | {
-                   name: ("batch_" + ((($i / $batchSize) + 1) | tostring | if length == 1 then "0" + . else . end)),
-                   repos: $all[$i : $i + $batchSize]
-                 }]')
+          # Chunk within each owner rather than across the whole fleet, so every matrix
+          # leg carries exactly one owner and therefore exactly one credential.
+          matrix=$(printf '%s' "${repos}" | jq -c --argjson batchSize "${BATCH_SIZE}" '
+            group_by(.owner)
+            | map(
+                . as $g
+                | ($g[0].owner) as $owner
+                | ($g[0].secret) as $secret
+                | [range(0; ($g | length); $batchSize) as $i
+                   | {
+                       name: ($owner + " batch_" + (((($i / $batchSize) + 1) | floor | tostring) | if length == 1 then "0" + . else . end)),
+                       owner: $owner,
+                       secret: $secret,
+                       repos: ($g[$i : $i + $batchSize] | map(del(.secret)))
+                     }]
+              )
+            | add // []')
           count=$(printf '%s' "${matrix}" | jq 'length')
           total=$(printf '%s' "${matrix}" | jq '[.[] | .repos | length] | add // 0')
+          if [ "${#failed_owners[@]}" -eq 0 ]; then
+            failed_json='[]'
+          else
+            failed_json=$(jq -cn '$ARGS.positional' --args "${failed_owners[@]}")
+          fi
           {
             echo "matrix=${matrix}"
             echo "count=${count}"
+            echo "failed_owners=${failed_json}"
           } >> "${GITHUB_OUTPUT}"
           echo "Discovered ${total} target repo(s) across ${count} batch(es) of up to ${BATCH_SIZE}."
-          echo "${matrix}" | jq '[.[] | {name, count: (.repos | length)}]'
+          printf '%s' "${matrix}" | jq '[.[] | {name, owner, count: (.repos | length)}]'
 
   refresh:
     name: 'Refresh ${{ matrix.batch.name }}'
@@ -167,7 +243,11 @@ jobs:
       # the whole job-timeout budget.
       - name: 'Process batch ${{ matrix.batch.name }}'
         env:
-          GH_TOKEN: ${{ secrets.CLAUDE_MD_REFRESH_TOKEN }}
+          # Every batch is single-owner (the discover job chunks within each owner), so
+          # this resolves to the fine-grained PAT for exactly the owner being processed.
+          # A fine-grained token is bound to one resource owner, so a single shared
+          # secret could never clone and push across all of them.
+          GH_TOKEN: ${{ secrets[matrix.batch.secret] }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # No HARDEN_OWNER here: every repo in the matrix carries its own
           # `owner`, so this job never has to guess which one it belongs to.
@@ -400,3 +480,27 @@ jobs:
           if [ "${#failed[@]}" -gt 0 ]; then
             exit 1
           fi
+
+  # The discover job deliberately keeps going when an owner cannot be enumerated, so the
+  # reachable owners still get refreshed. This job is what stops that tolerance from
+  # quietly becoming a green run that covered only part of the fleet.
+  verify:
+    name: 'Verify every owner was reachable'
+    needs: ['discover', 'refresh']
+    if: ${{ always() && needs.discover.result != 'cancelled' }}
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    steps:
+      - name: 'Fail when an owner could not be enumerated'
+        env:
+          FAILED_OWNERS: ${{ needs.discover.outputs.failed_owners }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FAILED_OWNERS}" ] || [ "${FAILED_OWNERS}" = '[]' ]; then
+            echo 'Every configured owner was enumerated.'
+            exit 0
+          fi
+          echo "::error::These owners could not be enumerated and were skipped entirely: ${FAILED_OWNERS}"
+          echo 'Check that each owner has its own fine-grained PAT with a lifetime of 366 days or less.'
+          exit 1
