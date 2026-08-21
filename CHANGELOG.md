@@ -28,6 +28,7 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 - changed the compliance audit's artifact name to include the owner, since one artifact name per run collided once the job fanned out
 - changed the credentials to one PAT per owner shared by all three workflows — `PERSONAL_ACCESS_TOKEN`, `MEDHUB_ACCESS_TOKEN` and `PREFY_ACCESS_TOKEN`, the same names `autobump-automation` and `autoupdate-automation` use — replacing the separate audit and refresh tokens, so each owner needs exactly one token for the whole automation fleet instead of one per privilege tier
 - changed the Go module dependencies to their latest versions
+- changed the Go version to `1.27.0` and updated all module dependencies
 
 ### Added
 
