@@ -127,14 +127,14 @@ The CLI follows the 5-phase compliance model:
 - **Phase 1** (`--phase 1`) — read-only audit; writes `${TMPDIR:-/tmp}/gh_hardening_audit_before.json`; with `--fail-on-noncompliant` exits non-zero when any repo drifts.
 - **Phase 2** (`--phase 2`) — applies repo settings (merge flags, `delete_branch_on_merge`, wiki/projects).
 
-The merge flags encode a **semi-linear history**: `allow_merge_commit` and `allow_rebase_merge` on,
-`allow_squash_merge` off. A pull request is rebased onto its base first — the *Update with rebase*
-option, which GitHub only offers while rebase merging is enabled — and then landed with *Merge pull
-request*, so `main` carries one merge commit per pull request over an otherwise linear ancestry.
-Squashing is disabled because it discards the branch's commits, and GitHub's own *Rebase and merge*
-button is left visible but must not be used: it fast-forwards and drops the merge commit. GitHub has
-no single "semi-linear merge" option the way Azure DevOps does, so the policy removes the buttons
-that break the shape instead of selecting one.
+  The merge flags encode a **semi-linear history**: `allow_merge_commit` and `allow_rebase_merge` on,
+  `allow_squash_merge` off. A pull request is rebased onto its base first — the *Update with rebase*
+  option, which GitHub only offers while rebase merging is enabled — and then landed with *Merge pull
+  request*, so `main` carries one merge commit per pull request over an otherwise linear ancestry.
+  Squashing is disabled because it discards the branch's commits, and GitHub's own *Rebase and merge*
+  button is left visible but must not be used: it fast-forwards and drops the merge commit. GitHub has
+  no single "semi-linear merge" option the way Azure DevOps does, so the policy removes the buttons
+  that break the shape instead of selecting one.
 - **Phase 3** (`--phase 3`) — applies security settings (Dependabot, secret scanning, push protection).
 - **Phase 4** (`--phase 4`) — applies branch protection and the `main-protection` ruleset.
 - **Phase 5** (`--phase 5`) — re-audits and diffs against the phase-1 snapshot.

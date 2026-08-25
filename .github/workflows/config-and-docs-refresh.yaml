@@ -83,7 +83,7 @@ jobs:
           # if the token's lifetime is greater than 366 days`.
           # Scoped to this step only so the PATs aren't exposed to checkout/setup steps.
           TOKEN_rios0rios0: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          TOKEN_medhub_tech: ${{ secrets.MEDHUB_ACCESS_TOKEN }}
+          TOKEN_medhub_life: ${{ secrets.MEDHUB_ACCESS_TOKEN }}
           TOKEN_prefy: ${{ secrets.PREFY_ACCESS_TOKEN }}
           REPO_INPUT: ${{ inputs.repo }}
           BATCH_SIZE: ${{ inputs.batch_size || 10 }}
