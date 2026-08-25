@@ -4,7 +4,7 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 
 ## Project Purpose
 
-`config-automation` runs scheduled, cross-repo maintenance against every repository of [`rios0rios0`](https://github.com/rios0rios0), [`medhub-tech`](https://github.com/medhub-tech), and [`prefy`](https://github.com/prefy). A fine-grained PAT is bound to a single resource owner, so each workflow fans out with `strategy.matrix.owner` and passes each leg one owner (via `HARDEN_OWNER`) and that owner's own token. Repositories are identified by their `owner/name` slug (`entities.Repository.QualifiedName()`), since bare names collide across owners:
+`config-automation` runs scheduled, cross-repo maintenance against every repository of [`rios0rios0`](https://github.com/rios0rios0), [`medhub-life`](https://github.com/medhub-life), and [`prefy`](https://github.com/prefy). A fine-grained PAT is bound to a single resource owner, so each workflow fans out with `strategy.matrix.owner` and passes each leg one owner (via `HARDEN_OWNER`) and that owner's own token. Repositories are identified by their `owner/name` slug (`entities.Repository.QualifiedName()`), since bare names collide across owners:
 
 1. **Daily compliance audit** — `.github/workflows/repo-compliance-audit.yaml` runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` and fails CI when any repo drifts from the hardening policy. Uploads `${TMPDIR:-/tmp}/gh_hardening_audit_before.json` as an artifact.
 2. **Weekly config and docs refresh** — `.github/workflows/config-and-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_config_and_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns "${MAX_TURNS}" --allowedTools '...' </dev/null` (the `</dev/null` is load-bearing: without it `claude` inherits the loop's stdin from `jq` and drains the batch after the first repo). `claude` output is tee'd to `${WORK_DIR}/.claude.log` so the loop can detect the org-wide `monthly usage limit` message and short-circuit the rest of the batch (skipped repos surface on a `quota_skipped` summary line; the quota-hitting repo is added to `failed` as `claude-quota:` so the leg still goes red). Drift detection uses `git add -N` + `git diff -w --quiet` on the in-scope files (today: `CLAUDE.md` and `.github/copilot-instructions.md`); `CHANGELOG.md` is staged with them but excluded from the gate. Branch name `chore/config-and-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, `max_parallel`, and `max_turns` inputs (defaults: `10`, `2`, `50`). The workflow is named for the broader scope so future refresh targets (diagrams, more config files) can be added without renaming.
@@ -61,13 +61,13 @@ go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
 CLI phases:
 
 ```bash
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 1   # read-only audit
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 2   # repo settings
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 3   # security settings
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 4   # branch protection + ruleset
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 5   # re-audit + diff snapshot
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --dry-run   # phases 1-4, no mutations
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --list-json # matrix input for config-and-docs-refresh
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 1   # read-only audit
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 2   # repo settings
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 3   # security settings
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 4   # branch protection + ruleset
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 5   # re-audit + diff snapshot
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run   # phases 1-4, no mutations
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --list-json # matrix input for config-and-docs-refresh
 ```
 
 ## Environment Variables
@@ -78,7 +78,7 @@ HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --list-json 
 | `GH_TOKEN` / `GITHUB_TOKEN`      | Bearer token for `github.com/google/go-github`.                         |
 | `TMPDIR`                         | Honored by `os.TempDir()` for `gh_hardening_audit_before.json` output.  |
 
-Workflow secrets, one fine-grained PAT per owner shared by all three workflows (a fine-grained token is bound to a single resource owner, and each token's lifetime must be 366 days or less): `PERSONAL_ACCESS_TOKEN` (`rios0rios0`), `MEDHUB_ACCESS_TOKEN` (`medhub-tech`), `PREFY_ACCESS_TOKEN` (`prefy`) — the same names `autobump-automation` and `autoupdate-automation` use — plus `CLAUDE_CODE_OAUTH_TOKEN` (refresh Claude Code CLI, shared).
+Workflow secrets, one fine-grained PAT per owner shared by all three workflows (a fine-grained token is bound to a single resource owner, and each token's lifetime must be 366 days or less): `PERSONAL_ACCESS_TOKEN` (`rios0rios0`), `MEDHUB_ACCESS_TOKEN` (`medhub-life`), `PREFY_ACCESS_TOKEN` (`prefy`) — the same names `autobump-automation` and `autoupdate-automation` use — plus `CLAUDE_CODE_OAUTH_TOKEN` (refresh Claude Code CLI, shared).
 
 ## Conventions
 
@@ -95,7 +95,7 @@ Workflow secrets, one fine-grained PAT per owner shared by all three workflows (
 Ruleset and branch-protection changes propagate to every `rios0rios0` repo on the next audit run. When touching `compliance_policy.go` or `ComputeIssues()`:
 
 1. Update the policy tests under `internal/domain/entities/` and the command tests under `internal/domain/commands/`.
-2. Run `HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --dry-run` and confirm the non-compliant set matches expectations.
+2. Run `HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run` and confirm the non-compliant set matches expectations.
 3. Update `CLAUDE.md`, `README.md`, and this file together.
 4. Record the change under `[Unreleased]` in `CHANGELOG.md`.
 

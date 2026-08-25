@@ -14,13 +14,13 @@ func TestRepositoryQualifiedName(t *testing.T) {
 	t.Run("should join owner and name when the owner is known", func(t *testing.T) {
 		t.Parallel()
 		// given
-		repo := builders.NewRepositoryBuilder().WithOwner("medhub-tech").WithName("guide").Build()
+		repo := builders.NewRepositoryBuilder().WithOwner("medhub-life").WithName("guide").Build()
 
 		// when
 		qualified := repo.QualifiedName()
 
 		// then
-		assert.Equal(t, "medhub-tech/guide", qualified)
+		assert.Equal(t, "medhub-life/guide", qualified)
 	})
 
 	t.Run("should fall back to the bare name when the owner is unknown", func(t *testing.T) {

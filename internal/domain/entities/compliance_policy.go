@@ -4,11 +4,21 @@ package entities
 // (phase 2). Forks and private repos may have per-field carve-outs;
 // AuditResult.ComputeIssues() encodes those. Exposed as a function so
 // the policy stays immutable from call sites.
+//
+// The three merge toggles encode a semi-linear history: a pull request is
+// rebased onto the base branch first ("Update with rebase", which GitHub
+// only offers while AllowRebaseMerge is on) and then landed with a merge
+// commit, so `main` keeps one merge commit per pull request over an
+// otherwise linear ancestry. AllowSquashMerge is off because squashing
+// discards the branch's individual commits, and GitHub's own "Rebase and
+// merge" button fast-forwards without the merge commit — neither produces
+// that shape. GitHub has no single "semi-linear merge" option, so the
+// policy removes the buttons that break it rather than selecting one.
 func DesiredRepoSettings() RepositorySettings {
 	return RepositorySettings{
 		DeleteBranchOnMerge: true,
 		AllowAutoMerge:      true,
-		AllowSquashMerge:    true,
+		AllowSquashMerge:    false,
 		AllowRebaseMerge:    true,
 		AllowMergeCommit:    true,
 		HasWiki:             false,

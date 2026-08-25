@@ -16,6 +16,14 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- changed the compliance policy to turn `allow_squash_merge` off fleet-wide, so `allow_merge_commit` + `allow_rebase_merge` on and squash off now spell a semi-linear history on every audited repository: a pull request is rebased onto its base with *Update with rebase* and then landed with a merge commit, leaving `main` with one merge commit per pull request over an otherwise linear ancestry — GitHub offers no single "semi-linear merge" option the way Azure DevOps does, so the policy removes the buttons that break the shape rather than selecting one
+
+### Fixed
+
+- fixed every scheduled workflow targeting the `medhub-tech` organization, which was renamed to `medhub-life` and now returns `404` on every API call: the daily compliance audit, the weekly config-and-docs refresh and the weekly release reconciliation each had a dead matrix leg, and because the CLI treats a listing failure for any owner as fatal that leg failed on every run while the other owners passed — the `MEDHUB_ACCESS_TOKEN` secret name is unchanged, only the owner it addresses
+
 ## [0.7.0] - 2026-08-24
 
 ### Added

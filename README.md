@@ -8,7 +8,7 @@
         <img src="https://img.shields.io/github/actions/workflow/status/rios0rios0/config-automation/repo-compliance-audit.yaml?branch=main&style=for-the-badge&logo=github&label=compliance" alt="Compliance Audit Status"/></a>
 </p>
 
-Scheduled GitHub Actions workflows that keep every repository under [`rios0rios0`](https://github.com/rios0rios0), [`medhub-tech`](https://github.com/medhub-tech), and [`prefy`](https://github.com/prefy) compliant with shared hardening policy and in sync with the team's configuration and documentation files.
+Scheduled GitHub Actions workflows that keep every repository under [`rios0rios0`](https://github.com/rios0rios0), [`medhub-life`](https://github.com/medhub-life), and [`prefy`](https://github.com/prefy) compliant with shared hardening policy and in sync with the team's configuration and documentation files.
 
 The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-separated list. The workflows do **not** pass all owners at once: a GitHub fine-grained PAT is bound to a single resource owner, so each workflow fans out into one job per owner and hands that job only its own owner and its own token. Adding an organization means adding a matrix entry and its secret — no code change needed. Because repository names are only unique within one owner, reports, snapshots, and diffs key on the `owner/name` slug.
 
@@ -26,7 +26,7 @@ owner**, shared by all three workflows, plus the Claude Code token:
 | Secret                    | Owner         | Purpose                                                                                          |
 |---------------------------|---------------|--------------------------------------------------------------------------------------------------|
 | `PERSONAL_ACCESS_TOKEN`   | `rios0rios0`  | Audits, refreshes and reconciles every repository of this owner.                                 |
-| `MEDHUB_ACCESS_TOKEN`     | `medhub-tech` | Same, for `medhub-tech`.                                                                         |
+| `MEDHUB_ACCESS_TOKEN`     | `medhub-life` | Same, for `medhub-life`.                                                                         |
 | `PREFY_ACCESS_TOKEN`      | `prefy`       | Same, for `prefy`.                                                                               |
 | `CLAUDE_CODE_OAUTH_TOKEN` | —             | Authenticates the Claude Code CLI during the refresh.                                            |
 
@@ -43,7 +43,7 @@ union of what the three workflows do:
   the release-recovery tag pushes. The tag push must come from a PAT: a tag pushed with
   `GITHUB_TOKEN` does not start the delivery workflow.
 
-Every fine-grained token's lifetime must be **366 days or less**. `medhub-tech` and `prefy` reject
+Every fine-grained token's lifetime must be **366 days or less**. `medhub-life` and `prefy` reject
 longer-lived fine-grained tokens with `403 ... forbids access via a fine-grained personal access
 tokens if the token's lifetime is greater than 366 days`.
 
@@ -68,7 +68,7 @@ Manual trigger — one-off config-and-docs refresh against a single repo. Pass
 
 ```bash
 gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
-gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=medhub-tech/frontend
+gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=medhub-life/frontend
 ```
 
 Manual trigger — compliance audit on demand:
@@ -81,22 +81,22 @@ Locally, the CLI supports the full phase model:
 
 ```bash
 # Audit-only (read-only, writes /tmp/gh_hardening_audit_before.json)
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 1
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 1
 
 # Apply phases locally (mutates). --repo matches the bare name in every
 # configured owner, so narrow HARDEN_OWNER when a name is not unique.
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 2 --repo <name>
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 3 --repo <name>
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 4 --repo <name>
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 2 --repo <name>
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 3 --repo <name>
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 4 --repo <name>
 
 # Preview every phase without mutating anything
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --dry-run
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run
 
 # List target repos for the config-and-docs refresh matrix (JSON on stdout)
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --list-json
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --list-json
 
 # Re-audit and diff against the before snapshot
-HARDEN_OWNER=rios0rios0,medhub-tech,prefy go run ./cmd/harden-repos --phase 5
+HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 5
 ```
 
 ## Architecture
@@ -126,6 +126,15 @@ The CLI follows the 5-phase compliance model:
 
 - **Phase 1** (`--phase 1`) — read-only audit; writes `${TMPDIR:-/tmp}/gh_hardening_audit_before.json`; with `--fail-on-noncompliant` exits non-zero when any repo drifts.
 - **Phase 2** (`--phase 2`) — applies repo settings (merge flags, `delete_branch_on_merge`, wiki/projects).
+
+  The merge flags encode a **semi-linear history**: `allow_merge_commit` and `allow_rebase_merge` on,
+  `allow_squash_merge` off. A pull request is rebased onto its base first — the *Update with rebase*
+  option, which GitHub only offers while rebase merging is enabled — and then landed with *Merge pull
+  request*, so `main` carries one merge commit per pull request over an otherwise linear ancestry.
+  Squashing is disabled because it discards the branch's commits, and GitHub's own *Rebase and merge*
+  button is left visible but must not be used: it fast-forwards and drops the merge commit. GitHub has
+  no single "semi-linear merge" option the way Azure DevOps does, so the policy removes the buttons
+  that break the shape instead of selecting one.
 - **Phase 3** (`--phase 3`) — applies security settings (Dependabot, secret scanning, push protection).
 - **Phase 4** (`--phase 4`) — applies branch protection and the `main-protection` ruleset.
 - **Phase 5** (`--phase 5`) — re-audits and diffs against the phase-1 snapshot.
