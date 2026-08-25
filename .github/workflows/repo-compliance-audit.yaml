@@ -27,7 +27,7 @@ jobs:
         owner:
           - name: 'rios0rios0'
             secret: 'PERSONAL_ACCESS_TOKEN'
-          - name: 'medhub-tech'
+          - name: 'medhub-life'
             secret: 'MEDHUB_ACCESS_TOKEN'
           - name: 'prefy'
             secret: 'PREFY_ACCESS_TOKEN'
@@ -39,7 +39,7 @@ jobs:
       # `Secret scanning alerts` for this audit, plus `Contents: write` and
       # `Pull requests: write` for the refresh and reconcile jobs.
       #
-      # The token's lifetime must be 366 days or less: `medhub-tech` and `prefy` reject
+      # The token's lifetime must be 366 days or less: `medhub-life` and `prefy` reject
       # longer-lived fine-grained tokens with `403 ... forbids access via a fine-grained
       # personal access tokens if the token's lifetime is greater than 366 days`.
       #

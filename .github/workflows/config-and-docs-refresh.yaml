@@ -44,7 +44,7 @@ jobs:
       # line on the `Build matrix` step.
       OWNERS: >-
         [{"name": "rios0rios0", "secret": "PERSONAL_ACCESS_TOKEN"},
-         {"name": "medhub-tech", "secret": "MEDHUB_ACCESS_TOKEN"},
+         {"name": "medhub-life", "secret": "MEDHUB_ACCESS_TOKEN"},
          {"name": "prefy", "secret": "PREFY_ACCESS_TOKEN"}]
       # A bare `repo` input keeps its old ergonomics by resolving against this owner.
       DEFAULT_OWNER: 'rios0rios0'
@@ -78,7 +78,7 @@ jobs:
         env:
           # One fine-grained PAT per owner, looked up in the script as
           # `TOKEN_<owner with '-' replaced by '_'>`. Every token's lifetime must be
-          # 366 days or less: `medhub-tech` and `prefy` reject longer-lived fine-grained
+          # 366 days or less: `medhub-life` and `prefy` reject longer-lived fine-grained
           # tokens with `403 ... forbids access via a fine-grained personal access tokens
           # if the token's lifetime is greater than 366 days`.
           # Scoped to this step only so the PATs aren't exposed to checkout/setup steps.

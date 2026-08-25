@@ -51,25 +51,25 @@ func TestParseOwners(t *testing.T) {
 	t.Run("should split every owner when the variable names several", func(t *testing.T) {
 		t.Parallel()
 		// given
-		raw := "rios0rios0,medhub-tech,prefy"
+		raw := "rios0rios0,medhub-life,prefy"
 
 		// when
 		owners := parseOwners(raw)
 
 		// then
-		assert.Equal(t, []string{"rios0rios0", "medhub-tech", "prefy"}, owners)
+		assert.Equal(t, []string{"rios0rios0", "medhub-life", "prefy"}, owners)
 	})
 
 	t.Run("should trim surrounding whitespace when the list is spaced out", func(t *testing.T) {
 		t.Parallel()
 		// given
-		raw := " rios0rios0 , medhub-tech ,\tprefy "
+		raw := " rios0rios0 , medhub-life ,\tprefy "
 
 		// when
 		owners := parseOwners(raw)
 
 		// then
-		assert.Equal(t, []string{"rios0rios0", "medhub-tech", "prefy"}, owners)
+		assert.Equal(t, []string{"rios0rios0", "medhub-life", "prefy"}, owners)
 	})
 
 	t.Run("should drop blank entries when the list has empty slots", func(t *testing.T) {
@@ -99,13 +99,13 @@ func TestParseOwners(t *testing.T) {
 	t.Run("should preserve the caller's ordering when the list is not alphabetical", func(t *testing.T) {
 		t.Parallel()
 		// given
-		raw := "prefy,rios0rios0,medhub-tech"
+		raw := "prefy,rios0rios0,medhub-life"
 
 		// when
 		owners := parseOwners(raw)
 
 		// then
-		assert.Equal(t, []string{"prefy", "rios0rios0", "medhub-tech"}, owners)
+		assert.Equal(t, []string{"prefy", "rios0rios0", "medhub-life"}, owners)
 	})
 }
 
