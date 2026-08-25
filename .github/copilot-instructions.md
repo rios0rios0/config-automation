@@ -86,7 +86,7 @@ Workflow secrets, one fine-grained PAT per owner shared by all three workflows (
 - **Tests** — `//go:build unit`, `_test` package suffix, `t.Parallel()` on every top-level test function, BDD `// given` / `// when` / `// then` blocks. Prefer in-memory doubles over `testify/mock`. Builders live under `test/domain/builders/`.
 - **YAML files** — `.yaml` (never `.yml`); single-quote string values except where variable interpolation requires double quotes; never quote booleans or numbers.
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
-- **Changelog** — every change lands under `[Unreleased]` in `CHANGELOG.md` in the same commit. Keep a Changelog format. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.
+- **Changelog** — every change writes its own fragment under `.changes/unreleased/` with `chlog new --kind <Kind> --body "..."`, in the same commit; `CHANGELOG.md` is generated from them and is never edited by hand. Keep a Changelog kinds. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.
 - **Actions pins** — every step-level `actions/*` use is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment, never a bare tag (a security decision from `0.3.8`; do not revert a SHA to `@v6`). Keep every workflow on the same latest major: `actions/checkout` v6, `actions/upload-artifact` v7, `actions/setup-go` v6, `actions/setup-node` v6. When bumping, update the SHA and its comment across all three scheduled workflows (`repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`) in the same commit. The `@anthropic-ai/claude-code` npm package is the exception — pinned implicitly to `latest` via `npm install -g`.
 - **Go toolchain** — every `actions/setup-go` step uses `go-version-file: 'go.mod'`, never a hardcoded `go-version`. `setup-go` exports `GOTOOLCHAIN=local`, so a loose spec like `'1.26'` resolves to whatever patch release the runner cached and then hard-fails every `go run` once `go.mod` requires a newer patch. Bumping `go.mod` is enough; the workflows follow.
 
@@ -97,7 +97,7 @@ Ruleset and branch-protection changes propagate to every `rios0rios0` repo on th
 1. Update the policy tests under `internal/domain/entities/` and the command tests under `internal/domain/commands/`.
 2. Run `HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run` and confirm the non-compliant set matches expectations.
 3. Update `CLAUDE.md`, `README.md`, and this file together.
-4. Record the change under `[Unreleased]` in `CHANGELOG.md`.
+4. Record the change in a fragment: `chlog new --kind Changed --body "..."`.
 
 ## Related Repositories
 
@@ -105,3 +105,28 @@ Ruleset and branch-protection changes propagate to every `rios0rios0` repo on th
 - [`rios0rios0/pipelines`](https://github.com/rios0rios0/pipelines) — reusable SDLC workflows consumed via `make lint` / `make test` / `make sast`.
 - [`rios0rios0/autobump`](https://github.com/rios0rios0/autobump) — releases `[Unreleased]` entries into versioned sections.
 - [`rios0rios0/guide`](https://github.com/rios0rios0/guide/wiki) — canonical development standards.
+
+<!-- chlog:start -->
+## Changelog (chlog) — MANDATORY
+
+If the repository you are working in uses chlog (a `.chlog.yaml` or `.chlog.yml`
+config file, or a `.changes/` directory, exists at the project root), the
+following is binding and ALWAYS applies: whenever you make ANY change, you MUST
+create a changelog fragment as part of the same change — automatically, without
+being asked, before committing.
+
+- Do NOT edit CHANGELOG.md directly; it is generated from fragments.
+- Create the fragment with:
+  `chlog new --kind <Kind> --body "<imperative description>"`
+- Valid kinds: Added, Changed, Deprecated, Removed, Fixed, Security
+- Choose the kind that best matches the change (e.g., new feature → Added,
+  bug fix → Fixed, behavior change → Changed, removal → Removed, security fix → Security).
+- If the change is backward-INCOMPATIBLE with the public API (a breaking
+  change), you MUST add the `--breaking` flag:
+  `chlog new --kind <Kind> --breaking --body "<description>"`.
+  This is the ONLY thing that triggers a major version bump — the kind alone
+  never does (per SemVer, major = incompatible change). When unsure whether a
+  change breaks compatibility, ask the user instead of guessing.
+- Fragments are YAML files in `.changes/unreleased/`; stage them with your commit.
+- `chlog check` fails the build when a fragment is missing — never skip it.
+<!-- chlog:end -->

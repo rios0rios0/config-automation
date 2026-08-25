@@ -9,6 +9,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
 
 - Go 1.26+
 - [Make](https://www.gnu.org/software/make/)
+- [chlog](https://github.com/luizjhonata/chlog) (`go install github.com/luizjhonata/chlog@latest`)
 - [GitHub CLI (`gh`)](https://cli.github.com/) authenticated against an account with read access to `rios0rios0` repos
 - A `GH_TOKEN` (env var) or `gh auth login` session whose token has the scopes described in `README.md`
 
@@ -30,7 +31,11 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    ```bash
    HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 1 --repo autobump
    ```
-6. Update `CHANGELOG.md` under `[Unreleased]` in the same commit that introduces the change.
+6. Add a changelog fragment — never edit `CHANGELOG.md`, which is generated from them:
+   ```bash
+   chlog new --kind Added --body "added the thing that was not there before"
+   ```
+   Write it in the same commit that introduces the change.
 7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `CLAUDE.md` and `README.md` to match.
 8. Commit following the [commit conventions](https://github.com/rios0rios0/guide/wiki/Git-Flow).
 9. Open a pull request against `main`.

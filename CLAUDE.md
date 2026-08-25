@@ -61,7 +61,7 @@ Test files use `//go:build unit`, the `_test` package suffix (external tests), `
 - **Go conventions** follow `.claude/rules/golang.md` in the user's global rules: `snake_case` file names, one-letter receiver names (`c` for Command, `r` for Repository), Uber Dig for DI, Logrus for logging, testify for tests, no framework tags on entities.
 - **Actions pins:** every step-level `actions/*` use is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment (not a bare tag) — a security decision from `0.3.8`; do not "simplify" a SHA back to `@v6`. Keep every workflow on the same latest major (currently `actions/checkout` v6, `actions/upload-artifact` v7, `actions/setup-go` v6, `actions/setup-node` v6). When bumping, update the SHA *and* its comment across all three workflows (`repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`) in the same commit. The `@anthropic-ai/claude-code` npm package is the exception: pinned implicitly to `latest` via `npm install -g`; rely on the CLI's own version skew tolerance rather than pinning a specific version.
 - **Go toolchain in workflows:** every `actions/setup-go` step uses `go-version-file: 'go.mod'` — never a hardcoded `go-version`. `setup-go` exports `GOTOOLCHAIN=local`, so a loose spec like `'1.26'` silently resolves to whatever patch release the runner has cached (e.g. 1.26.4) and then hard-fails every `go run` the moment `go.mod` requires a newer patch (`go 1.26.5`). Bumping `go.mod` is therefore enough; the workflows follow automatically.
-- **Changelog discipline:** every change goes under `[Unreleased]` in `CHANGELOG.md` in the same commit. Keep a Changelog format, simple past tense, backticks around code identifiers.
+- **Changelog discipline:** every change writes its own fragment under `.changes/unreleased/` with `chlog new --kind <Kind> --body "..."`, in the same commit. `CHANGELOG.md` is generated from the fragments at release time and is never edited by hand. Keep a Changelog kinds, simple past tense, backticks around code identifiers.
 - **Commits:** `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
 - **Ruleset / branch-protection changes are load-bearing.** Every `rios0rios0` repo inherits the same policy; a change here propagates to all of them on the next audit run.
 
@@ -71,3 +71,28 @@ Test files use `//go:build unit`, the `_test` package suffix (external tests), `
 - [`rios0rios0/pipelines`](https://github.com/rios0rios0/pipelines) — reusable workflows consumed by the workflow templates in `.github`.
 - [`rios0rios0/autobump`](https://github.com/rios0rios0/autobump) — releases `CHANGELOG.md` entries into versioned sections.
 - [`rios0rios0/guide`](https://github.com/rios0rios0/guide/wiki) — canonical development standards.
+
+<!-- chlog:start -->
+## Changelog (chlog) — MANDATORY
+
+If the repository you are working in uses chlog (a `.chlog.yaml` or `.chlog.yml`
+config file, or a `.changes/` directory, exists at the project root), the
+following is binding and ALWAYS applies: whenever you make ANY change, you MUST
+create a changelog fragment as part of the same change — automatically, without
+being asked, before committing.
+
+- Do NOT edit CHANGELOG.md directly; it is generated from fragments.
+- Create the fragment with:
+  `chlog new --kind <Kind> --body "<imperative description>"`
+- Valid kinds: Added, Changed, Deprecated, Removed, Fixed, Security
+- Choose the kind that best matches the change (e.g., new feature → Added,
+  bug fix → Fixed, behavior change → Changed, removal → Removed, security fix → Security).
+- If the change is backward-INCOMPATIBLE with the public API (a breaking
+  change), you MUST add the `--breaking` flag:
+  `chlog new --kind <Kind> --breaking --body "<description>"`.
+  This is the ONLY thing that triggers a major version bump — the kind alone
+  never does (per SemVer, major = incompatible change). When unsure whether a
+  change breaks compatibility, ask the user instead of guessing.
+- Fragments are YAML files in `.changes/unreleased/`; stage them with your commit.
+- `chlog check` fails the build when a fragment is missing — never skip it.
+<!-- chlog:end -->
