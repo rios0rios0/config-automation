@@ -18,12 +18,14 @@ type InMemoryBranchProtectionsRepository struct {
 	ProtectionSaves   []entities.Repository
 	SignaturesEnabled []string
 	RulesetsCreated   []string
+	RulesetsUpdated   []string
 
 	ErrorOnFindProtection error
 	ErrorOnSaveProtection error
 	ErrorOnSignatures     error
 	ErrorOnFindRuleset    error
 	ErrorOnCreateRuleset  error
+	ErrorOnUpdateRuleset  error
 }
 
 // NewInMemoryBranchProtectionsRepository builds the double.
@@ -101,6 +103,19 @@ func (r *InMemoryBranchProtectionsRepository) CreateRuleset(
 		return r.ErrorOnCreateRuleset
 	}
 	r.RulesetsCreated = append(r.RulesetsCreated, name)
+	return nil
+}
+
+func (r *InMemoryBranchProtectionsRepository) UpdateRuleset(
+	_ context.Context,
+	_, name string,
+	_ int64,
+	_ entities.Ruleset,
+) error {
+	if r.ErrorOnUpdateRuleset != nil {
+		return r.ErrorOnUpdateRuleset
+	}
+	r.RulesetsUpdated = append(r.RulesetsUpdated, name)
 	return nil
 }
 

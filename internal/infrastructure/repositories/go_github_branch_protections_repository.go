@@ -40,7 +40,16 @@ func (r GoGithubBranchProtectionsRepository) FindProtectionByBranch(
 		if isStatusCode(err, http.StatusForbidden) || isUpgradeRequired(err) {
 			return entities.BranchProtection{Available: false}, nil
 		}
-		if isStatusCode(err, http.StatusNotFound) || strings.Contains(err.Error(), "Branch not protected") {
+		// go-github collapses the 404 "Branch not protected" body into the
+		// ErrBranchNotProtected sentinel, which is a plain errors.New and
+		// NOT an *ErrorResponse — so isStatusCode cannot see the 404, and
+		// its text is "branch is not protected", which does not match the
+		// API's own "Branch not protected" wording either. Both of the
+		// other checks miss it, and the error then propagates as a hard
+		// AuditError that makes phases 2-4 skip the repo entirely.
+		if errors.Is(err, github.ErrBranchNotProtected) ||
+			isStatusCode(err, http.StatusNotFound) ||
+			strings.Contains(err.Error(), "Branch not protected") {
 			return entities.BranchProtection{Available: true, Enabled: false}, nil
 		}
 		return entities.BranchProtection{}, err
@@ -156,6 +165,20 @@ func (r GoGithubBranchProtectionsRepository) CreateRuleset(
 	ruleset entities.Ruleset,
 ) error {
 	_, _, err := r.client.Repositories.CreateRuleset(ctx, owner, name, buildRulesetRequest(ruleset))
+	return err
+}
+
+// UpdateRuleset PUTs the canonical policy body over an existing ruleset.
+// CreateRuleset cannot be reused here: GitHub rejects a POST whose name
+// is already taken with `422 Name must be unique`, which is exactly what
+// a repo whose ruleset predates a policy change would hit.
+func (r GoGithubBranchProtectionsRepository) UpdateRuleset(
+	ctx context.Context,
+	owner, name string,
+	rulesetID int64,
+	ruleset entities.Ruleset,
+) error {
+	_, _, err := r.client.Repositories.UpdateRuleset(ctx, owner, name, rulesetID, buildRulesetRequest(ruleset))
 	return err
 }
 

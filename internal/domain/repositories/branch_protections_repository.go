@@ -38,7 +38,16 @@ type BranchProtectionsRepository interface {
 	FindRulesetByName(ctx context.Context, owner, name, rulesetName string) (*entities.Ruleset, error)
 
 	// CreateRuleset creates the `main-protection` ruleset with the
-	// policy-aligned body: enforcement=active, non_fast_forward rule,
-	// targets refs/heads/main, RepositoryAdmin bypass.
+	// policy-aligned body: enforcement=active, non_fast_forward and
+	// pull_request rules, targets refs/heads/main, RepositoryAdmin bypass.
+	// Only valid when the repo has no ruleset of that name — GitHub
+	// rejects a duplicate name with 422, so a drifted ruleset must go
+	// through UpdateRuleset instead.
 	CreateRuleset(ctx context.Context, owner, name string, ruleset entities.Ruleset) error
+
+	// UpdateRuleset rewrites an existing ruleset in place, identified by
+	// the ID that FindRulesetByName returned. This is the path a drifted
+	// ruleset takes: the policy gained a rule the repo's ruleset predates,
+	// so the body has to be replaced rather than created afresh.
+	UpdateRuleset(ctx context.Context, owner, name string, rulesetID int64, ruleset entities.Ruleset) error
 }
