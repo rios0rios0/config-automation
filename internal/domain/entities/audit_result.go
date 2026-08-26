@@ -1,6 +1,9 @@
 package entities
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // AuditResult is the snapshot of one repository's current state plus the
 // compliance issues computed from the policy. Phase 1 emits a slice of
@@ -78,6 +81,9 @@ func (a AuditResult) repoSettingsIssues() []string {
 	issues = append(
 		issues,
 		checkSetting("allow_merge_commit", settings.AllowMergeCommit, policy.AllowMergeCommit, false)...)
+	issues = append(
+		issues,
+		checkSetting("allow_update_branch", settings.AllowUpdateBranch, policy.AllowUpdateBranch, false)...)
 
 	if _, wikiAllowed := DesiredWikiAllowlist()[a.Repository.Name]; !wikiAllowed {
 		issues = append(issues, checkSetting("has_wiki", settings.HasWiki, policy.HasWiki, false)...)
@@ -139,6 +145,13 @@ func (a AuditResult) rulesetIssues() []string {
 	if !a.Ruleset.HasNonFastForward {
 		issues = append(issues, "ruleset_non_fast_forward=rule_missing")
 	}
+	if !a.Ruleset.HasAllowedMergeMethods(DesiredAllowedMergeMethods()) {
+		issues = append(issues, fmt.Sprintf(
+			"ruleset_allowed_merge_methods=%s(want %s)",
+			mergeMethodsOrMissing(a.Ruleset.AllowedMergeMethods),
+			strings.Join(DesiredAllowedMergeMethods(), "+"),
+		))
+	}
 	if !a.Ruleset.TargetsMain {
 		issues = append(issues, "ruleset_targets_main=missing")
 	}
@@ -146,6 +159,19 @@ func (a AuditResult) rulesetIssues() []string {
 		issues = append(issues, "ruleset_admin_bypass=missing")
 	}
 	return issues
+}
+
+// mergeMethodsOrMissing renders the current merge-method list for an
+// issue string. A nil list means the ruleset has no pull_request rule at
+// all, which reads differently from a rule that lists nothing.
+func mergeMethodsOrMissing(methods []string) string {
+	if methods == nil {
+		return "rule_missing"
+	}
+	if len(methods) == 0 {
+		return "none"
+	}
+	return strings.Join(methods, "+")
 }
 
 // IsCompliant reports whether this audit has zero issues.

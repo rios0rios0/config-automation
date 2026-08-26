@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v75/github"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
 	"github.com/rios0rios0/config-automation/internal/domain/repositories"
@@ -147,6 +147,7 @@ func (r GoGithubRepositoriesRepository) Save(ctx context.Context, repo entities.
 		AllowSquashMerge:    new(repo.Settings.AllowSquashMerge),
 		AllowRebaseMerge:    new(repo.Settings.AllowRebaseMerge),
 		AllowMergeCommit:    new(repo.Settings.AllowMergeCommit),
+		AllowUpdateBranch:   new(repo.Settings.AllowUpdateBranch),
 		HasWiki:             new(repo.Settings.HasWiki),
 		HasProjects:         new(repo.Settings.HasProjects),
 	}
@@ -174,6 +175,7 @@ func mapRepoDetailToEntity(repo *github.Repository) entities.Repository {
 		AllowSquashMerge:    boolOrDefault(repo.AllowSquashMerge, true),
 		AllowRebaseMerge:    boolOrDefault(repo.AllowRebaseMerge, true),
 		AllowMergeCommit:    boolOrDefault(repo.AllowMergeCommit, true),
+		AllowUpdateBranch:   boolOrFalse(repo.AllowUpdateBranch),
 		HasWiki:             boolOrFalse(repo.HasWiki),
 		HasProjects:         boolOrFalse(repo.HasProjects),
 	}

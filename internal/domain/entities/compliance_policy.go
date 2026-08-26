@@ -5,15 +5,28 @@ package entities
 // AuditResult.ComputeIssues() encodes those. Exposed as a function so
 // the policy stays immutable from call sites.
 //
-// The three merge toggles encode a semi-linear history: a pull request is
+// The merge toggles encode a semi-linear history: a pull request is
 // rebased onto the base branch first ("Update with rebase", which GitHub
 // only offers while AllowRebaseMerge is on) and then landed with a merge
 // commit, so `main` keeps one merge commit per pull request over an
 // otherwise linear ancestry. AllowSquashMerge is off because squashing
-// discards the branch's individual commits, and GitHub's own "Rebase and
-// merge" button fast-forwards without the merge commit — neither produces
-// that shape. GitHub has no single "semi-linear merge" option, so the
-// policy removes the buttons that break it rather than selecting one.
+// discards the branch's individual commits.
+//
+// AllowRebaseMerge stays on for one reason only: it is the toggle that
+// surfaces "Update with rebase". It also surfaces "Rebase and merge",
+// which fast-forwards without the merge commit and breaks the shape —
+// GitHub gates both on the same flag, so the repo level cannot separate
+// them. The fast-forward path is therefore blocked one level down, by
+// DesiredAllowedMergeMethods() on the ruleset's pull_request rule, which
+// narrows `main` to merge commits only while the repo-wide toggle stays
+// on. Repo settings and the ruleset are two halves of one decision:
+// changing either alone re-opens the fast-forward or kills the button.
+//
+// AllowUpdateBranch is "Always suggest updating pull request branches".
+// Without it the "Update branch" control only appears when branch
+// protection requires the branch be up to date before merging, which
+// this policy does not require — so it is what makes the rebase-update
+// button reliably present on every repo.
 func DesiredRepoSettings() RepositorySettings {
 	return RepositorySettings{
 		DeleteBranchOnMerge: true,
@@ -21,6 +34,7 @@ func DesiredRepoSettings() RepositorySettings {
 		AllowSquashMerge:    false,
 		AllowRebaseMerge:    true,
 		AllowMergeCommit:    true,
+		AllowUpdateBranch:   true,
 		HasWiki:             false,
 		HasProjects:         false,
 	}
@@ -40,6 +54,20 @@ func DesiredWikiAllowlist() map[string]struct{} {
 // DesiredReviewCount is the policy for classic branch protection. The
 // ruleset handles force-push protection separately.
 const DesiredReviewCount = 1
+
+// DesiredAllowedMergeMethods is the policy for the ruleset's
+// pull_request rule: `main` accepts merge commits and nothing else.
+// This is where "no fast-forward merges" is actually enforced —
+// DesiredRepoSettings() deliberately leaves allow_rebase_merge on so the
+// "Update with rebase" button survives, and a ruleset can only narrow
+// what the repo already allows, so the two must be read together.
+// Returns a fresh slice each call to keep the policy immutable at call
+// sites. Values are GitHub's lowercase spelling (`merge`, `squash`,
+// `rebase`) used by the pull_request rule — the merge_queue rule uses
+// the uppercase spelling for the same concept, so do not share them.
+func DesiredAllowedMergeMethods() []string {
+	return []string{"merge"}
+}
 
 // DesiredRulesetName is the stable name the compliance ruleset must use.
 // Phase 4 creates or updates a ruleset with this exact name so repeated

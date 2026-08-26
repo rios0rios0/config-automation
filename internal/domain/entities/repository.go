@@ -22,6 +22,7 @@ type RepositorySettings struct {
 	AllowSquashMerge    bool
 	AllowRebaseMerge    bool
 	AllowMergeCommit    bool
+	AllowUpdateBranch   bool
 	HasWiki             bool
 	HasProjects         bool
 }

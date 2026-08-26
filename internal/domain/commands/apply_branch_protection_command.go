@@ -224,14 +224,22 @@ func DesiredBranchProtection() entities.BranchProtection {
 }
 
 // DesiredRuleset returns the canonical ruleset body. Admin bypass is
-// always included so the owner can force-push when they need to.
+// always included so the owner can force-push when they need to — which
+// also means the repository admin is not subject to the merge-method
+// restriction. GitHub scopes a bypass actor to the whole ruleset, not to
+// individual rules, so the two cannot be separated without splitting
+// this into a second bypass-free ruleset. The restriction therefore
+// binds every collaborator and every bot, and is a guardrail rather than
+// a lock for the owner — the same posture as branch protection here,
+// which runs with EnforceAdmins false.
 func DesiredRuleset() entities.Ruleset {
 	return entities.Ruleset{
-		Name:              entities.DesiredRulesetName,
-		Enforcement:       "active",
-		HasNonFastForward: true,
-		TargetsMain:       true,
-		AdminBypass:       true,
+		Name:                entities.DesiredRulesetName,
+		Enforcement:         "active",
+		HasNonFastForward:   true,
+		AllowedMergeMethods: entities.DesiredAllowedMergeMethods(),
+		TargetsMain:         true,
+		AdminBypass:         true,
 	}
 }
 

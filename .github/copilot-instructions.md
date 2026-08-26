@@ -26,7 +26,7 @@ config-automation/
 │   │   ├── entities/               # `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`, `compliance_policy.go`
 │   │   └── repositories/           # three port interfaces (repos, security, branch protection)
 │   └── infrastructure/
-│       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v66`
+│       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v75`
 ├── test/
 │   └── domain/
 │       ├── builders/               # `RepositoryBuilder`, `AuditResultBuilder`
