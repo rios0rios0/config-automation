@@ -1,6 +1,10 @@
 package commands
 
-import "github.com/rios0rios0/config-automation/internal/domain/entities"
+import (
+	"strings"
+
+	"github.com/rios0rios0/config-automation/internal/domain/entities"
+)
 
 // ReportComplianceChangesCommand runs phase 5: given a "before" audit
 // and an "after" audit, it lists the per-field diffs so the operator
@@ -82,6 +86,8 @@ func diffRepoSettings(before, after entities.AuditResult) []ComplianceDiff {
 		before.Repository.Settings.DeleteBranchOnMerge, after.Repository.Settings.DeleteBranchOnMerge)
 	diffs = appendBoolDiff(diffs, name, "allow_auto_merge",
 		before.Repository.Settings.AllowAutoMerge, after.Repository.Settings.AllowAutoMerge)
+	diffs = appendBoolDiff(diffs, name, "allow_update_branch",
+		before.Repository.Settings.AllowUpdateBranch, after.Repository.Settings.AllowUpdateBranch)
 	diffs = appendBoolDiff(diffs, name, "has_wiki",
 		before.Repository.Settings.HasWiki, after.Repository.Settings.HasWiki)
 	diffs = appendBoolDiff(diffs, name, "has_projects",
@@ -125,8 +131,24 @@ func diffRuleset(before, after entities.AuditResult) []ComplianceDiff {
 	if before.Ruleset != nil && after.Ruleset != nil {
 		diffs = appendBoolDiff(diffs, name, "ruleset_admin_bypass",
 			before.Ruleset.AdminBypass, after.Ruleset.AdminBypass)
+		diffs = appendStringDiff(diffs, name, "ruleset_allowed_merge_methods",
+			mergeMethodsLabel(before.Ruleset), mergeMethodsLabel(after.Ruleset))
 	}
 	return diffs
+}
+
+// mergeMethodsLabel renders a ruleset's allowed merge methods for the
+// before/after report. A nil list (no pull_request rule) must not render
+// the same as an empty one, or the run that first adds the rule would
+// report no change.
+func mergeMethodsLabel(ruleset *entities.Ruleset) string {
+	if ruleset == nil || ruleset.AllowedMergeMethods == nil {
+		return "rule_missing"
+	}
+	if len(ruleset.AllowedMergeMethods) == 0 {
+		return "none"
+	}
+	return strings.Join(ruleset.AllowedMergeMethods, "+")
 }
 
 func appendBoolDiff(diffs []ComplianceDiff, repo, field string, before, after bool) []ComplianceDiff {

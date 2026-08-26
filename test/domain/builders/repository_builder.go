@@ -24,6 +24,9 @@ func NewRepositoryBuilder() *RepositoryBuilder {
 				AllowSquashMerge: true,
 				AllowRebaseMerge: true,
 				AllowMergeCommit: true,
+				// AllowUpdateBranch stays false: GitHub's own default for a
+				// fresh repo, which is what these defaults mimic.
+				AllowUpdateBranch: false,
 			},
 		},
 	}

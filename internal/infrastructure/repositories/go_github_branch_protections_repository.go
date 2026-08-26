@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v75/github"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
 	"github.com/rios0rios0/config-automation/internal/domain/repositories"
@@ -123,7 +123,7 @@ func (r GoGithubBranchProtectionsRepository) FindRulesetByName(
 	ctx context.Context,
 	owner, name, rulesetName string,
 ) (*entities.Ruleset, error) {
-	list, _, err := r.client.Repositories.GetAllRulesets(ctx, owner, name, false)
+	list, _, err := r.client.Repositories.GetAllRulesets(ctx, owner, name, nil)
 	if err != nil {
 		if isUpgradeRequired(err) {
 			return nil, repositories.ErrRulesetNotFound
@@ -155,8 +155,7 @@ func (r GoGithubBranchProtectionsRepository) CreateRuleset(
 	owner, name string,
 	ruleset entities.Ruleset,
 ) error {
-	body := buildRulesetRequest(ruleset)
-	_, _, err := r.client.Repositories.CreateRuleset(ctx, owner, name, body)
+	_, _, err := r.client.Repositories.CreateRuleset(ctx, owner, name, buildRulesetRequest(ruleset))
 	return err
 }
 
@@ -174,19 +173,20 @@ func (r GoGithubBranchProtectionsRepository) findRequiredSignatures(
 	return sig.Enabled
 }
 
-func mapRulesetToEntity(rs *github.Ruleset) entities.Ruleset {
+func mapRulesetToEntity(rs *github.RepositoryRuleset) entities.Ruleset {
 	if rs == nil {
 		return entities.Ruleset{}
 	}
 	entity := entities.Ruleset{
 		Name:        rs.Name,
-		Enforcement: rs.Enforcement,
+		Enforcement: string(rs.Enforcement),
 	}
 	if rs.ID != nil {
 		entity.ID = *rs.ID
 	}
 	entity.AdminBypass = hasAdminBypass(rs.BypassActors)
 	entity.HasNonFastForward = hasNonFastForwardRule(rs.Rules)
+	entity.AllowedMergeMethods = allowedMergeMethods(rs.Rules)
 	entity.TargetsMain = targetsMain(rs.Conditions)
 	return entity
 }
@@ -196,23 +196,36 @@ func hasAdminBypass(actors []*github.BypassActor) bool {
 		if actor == nil || actor.ActorType == nil || actor.ActorID == nil {
 			continue
 		}
-		if *actor.ActorType == entities.RepositoryAdminActorType && *actor.ActorID == entities.RepositoryAdminActorID {
+		if string(*actor.ActorType) == entities.RepositoryAdminActorType &&
+			*actor.ActorID == entities.RepositoryAdminActorID {
 			return true
 		}
 	}
 	return false
 }
 
-func hasNonFastForwardRule(rules []*github.RepositoryRule) bool {
-	for _, rule := range rules {
-		if rule != nil && rule.Type == "non_fast_forward" {
-			return true
-		}
-	}
-	return false
+// hasNonFastForwardRule reports the `non_fast_forward` rule, which blocks
+// FORCE PUSHES. It is unrelated to how pull requests merge — that is
+// allowedMergeMethods below.
+func hasNonFastForwardRule(rules *github.RepositoryRulesetRules) bool {
+	return rules != nil && rules.NonFastForward != nil
 }
 
-func targetsMain(conditions *github.RulesetConditions) bool {
+// allowedMergeMethods reads the pull_request rule's allowed_merge_methods.
+// Returns nil when the ruleset carries no pull_request rule at all, so the
+// audit can tell "no rule" apart from "rule allows nothing".
+func allowedMergeMethods(rules *github.RepositoryRulesetRules) []string {
+	if rules == nil || rules.PullRequest == nil {
+		return nil
+	}
+	methods := make([]string, 0, len(rules.PullRequest.AllowedMergeMethods))
+	for _, method := range rules.PullRequest.AllowedMergeMethods {
+		methods = append(methods, string(method))
+	}
+	return methods
+}
+
+func targetsMain(conditions *github.RepositoryRulesetConditions) bool {
 	if conditions == nil || conditions.RefName == nil {
 		return false
 	}
@@ -224,16 +237,16 @@ func targetsMain(conditions *github.RulesetConditions) bool {
 	return false
 }
 
-func buildRulesetRequest(ruleset entities.Ruleset) *github.Ruleset {
-	actorType := entities.RepositoryAdminActorType
+func buildRulesetRequest(ruleset entities.Ruleset) github.RepositoryRuleset {
+	actorType := github.BypassActorTypeRepositoryRole
 	actorID := int64(entities.RepositoryAdminActorID)
-	bypassMode := "always"
-	target := "branch"
+	bypassMode := github.BypassModeAlways
+	target := github.RulesetTargetBranch
 
-	return &github.Ruleset{
+	return github.RepositoryRuleset{
 		Name:        ruleset.Name,
 		Target:      &target,
-		Enforcement: ruleset.Enforcement,
+		Enforcement: github.RulesetEnforcement(ruleset.Enforcement),
 		BypassActors: []*github.BypassActor{
 			{
 				ActorID:    &actorID,
@@ -241,14 +254,43 @@ func buildRulesetRequest(ruleset entities.Ruleset) *github.Ruleset {
 				BypassMode: &bypassMode,
 			},
 		},
-		Conditions: &github.RulesetConditions{
-			RefName: &github.RulesetRefConditionParameters{
-				Include: []string{"refs/heads/main"},
+		Conditions: &github.RepositoryRulesetConditions{
+			RefName: &github.RepositoryRulesetRefConditionParameters{
+				Include: []string{"refs/heads/" + entities.DesiredDefaultBranch},
 				Exclude: []string{},
 			},
 		},
-		Rules: []*github.RepositoryRule{github.NewNonFastForwardRule()},
+		Rules: buildRulesetRules(ruleset),
 	}
+}
+
+// buildRulesetRules assembles the two rules the policy carries:
+// `non_fast_forward` (blocks force pushes) and `pull_request` (pins the
+// merge methods). The pull_request rule's review settings mirror
+// DesiredBranchProtection so the ruleset and classic branch protection
+// state the same review policy instead of stacking two different ones —
+// GitHub applies the strictest of the two, so a mismatch here would
+// silently tighten the effective policy.
+func buildRulesetRules(ruleset entities.Ruleset) *github.RepositoryRulesetRules {
+	rules := &github.RepositoryRulesetRules{}
+	if ruleset.HasNonFastForward {
+		rules.NonFastForward = &github.EmptyRuleParameters{}
+	}
+	if ruleset.AllowedMergeMethods != nil {
+		methods := make([]github.PullRequestMergeMethod, 0, len(ruleset.AllowedMergeMethods))
+		for _, method := range ruleset.AllowedMergeMethods {
+			methods = append(methods, github.PullRequestMergeMethod(method))
+		}
+		rules.PullRequest = &github.PullRequestRuleParameters{
+			AllowedMergeMethods:            methods,
+			DismissStaleReviewsOnPush:      true,
+			RequireCodeOwnerReview:         false,
+			RequireLastPushApproval:        false,
+			RequiredApprovingReviewCount:   entities.DesiredReviewCount,
+			RequiredReviewThreadResolution: true,
+		}
+	}
+	return rules
 }
 
 func isStatusCode(err error, status int) bool {

@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'bumped `github.com/google/go-github` from `v66` to `v75`. The ruleset API was reshaped across those majors: `github.Ruleset` became `github.RepositoryRuleset`, its `Rules` slice became the typed `RepositoryRulesetRules` struct, and `Target`/`Enforcement`/`ActorType`/`BypassMode` became named string types. The bump was required because `PullRequestRuleParameters` only gained `AllowedMergeMethods` after `v66`, and that field is what pins `main` to merge commits.'
+time: '2026-08-26T00:00:01.000000000Z'

@@ -17,15 +17,16 @@ import (
 )
 
 const (
-	phaseAudit           = 1
-	phaseApplyRepo       = 2
-	phaseApplySecurity   = 3
-	phaseApplyProtection = 4
-	phaseReport          = 5
-	exitUsageError       = 2
-	secretColumnWidth    = 7
-	tableWidth           = 163
-	repoColumnWidth      = 48
+	phaseAudit             = 1
+	phaseApplyRepo         = 2
+	phaseApplySecurity     = 3
+	phaseApplyProtection   = 4
+	phaseReport            = 5
+	exitUsageError         = 2
+	secretColumnWidth      = 7
+	mergeMethodColumnWidth = 8
+	tableWidth             = 178
+	repoColumnWidth        = 48
 )
 
 // ownerSeparator splits the HARDEN_OWNER environment variable into the
@@ -475,12 +476,13 @@ func printAuditTable(audits []entities.AuditResult) {
 func printTableHeader() {
 	fmt.Fprintf(
 		os.Stdout,
-		"\n%-*s %-8s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-6s %-5s\n",
+		"\n%-*s %-8s %-7s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-8s %-6s %-5s\n",
 		repoColumnWidth,
 		"REPO",
 		"VIS",
 		"DEL-BR",
 		"AUTO-M",
+		"UPD-BR",
 		"WIKI",
 		"PROJ",
 		"SEC-SC",
@@ -489,6 +491,7 @@ func printTableHeader() {
 		"DEP-UP",
 		"PROT",
 		"NO-FP",
+		"MERGE-M",
 		"STALE",
 		"SIGS",
 	)
@@ -504,12 +507,13 @@ func printTableRows(audits []entities.AuditResult) int {
 			continue
 		}
 
-		fmt.Fprintf(os.Stdout, "%-*s %-8s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-6s %-5s\n",
+		fmt.Fprintf(os.Stdout, "%-*s %-8s %-7s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-8s %-6s %-5s\n",
 			repoColumnWidth,
 			repo.QualifiedName(),
 			repo.Visibility,
 			yesNo(repo.Settings.DeleteBranchOnMerge),
 			yesNo(repo.Settings.AllowAutoMerge),
+			yesNo(repo.Settings.AllowUpdateBranch),
 			yesNo(repo.Settings.HasWiki),
 			yesNo(repo.Settings.HasProjects),
 			truncate(defaultIfEmpty(a.Security.SecretScanning, "N/A"), secretColumnWidth),
@@ -518,6 +522,7 @@ func printTableRows(audits []entities.AuditResult) int {
 			yesNo(a.Security.DependabotUpdates),
 			protectionLabel(a),
 			forcePushLabel(a),
+			mergeMethodsLabel(a),
 			yesNo(a.BranchProtection.DismissStaleReviews),
 			yesNoTri(a.BranchProtection.Signatures),
 		)
@@ -545,6 +550,26 @@ func forcePushLabel(a entities.AuditResult) string {
 		return "Y"
 	}
 	return "N"
+}
+
+// mergeMethodsLabel renders the ruleset's allowed merge methods, which is
+// where the no-fast-forward-merge policy lives. NO-FP next to it is the
+// force-push rule and a different thing entirely. The three empty-ish
+// states are distinct and must not collapse: "-" is no ruleset at all,
+// "missing" is a ruleset without a pull_request rule, and "none" is a
+// pull_request rule that permits no method — only the last would block
+// every merge outright.
+func mergeMethodsLabel(a entities.AuditResult) string {
+	switch {
+	case a.Ruleset == nil:
+		return "-"
+	case a.Ruleset.AllowedMergeMethods == nil:
+		return "missing"
+	case len(a.Ruleset.AllowedMergeMethods) == 0:
+		return "none"
+	default:
+		return truncate(strings.Join(a.Ruleset.AllowedMergeMethods, "+"), mergeMethodColumnWidth)
+	}
 }
 
 func printSummary(audits []entities.AuditResult) {

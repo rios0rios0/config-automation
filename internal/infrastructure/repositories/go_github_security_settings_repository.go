@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v75/github"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
 	"github.com/rios0rios0/config-automation/internal/domain/repositories"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v75/github"
 	"go.uber.org/dig"
 	"golang.org/x/oauth2"
 

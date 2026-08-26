@@ -101,6 +101,89 @@ func TestAuditResultComputeIssues(t *testing.T) {
 		}
 	})
 
+	t.Run("should flag allow_update_branch when the rebase-update button is off", func(t *testing.T) {
+		t.Parallel()
+		// given — a repo compliant in every other way, with GitHub's default
+		// "Always suggest updating pull request branches" left off.
+		settings := entities.DesiredRepoSettings()
+		settings.AllowUpdateBranch = false
+		repo := builders.NewRepositoryBuilder().WithSettings(settings).Build()
+		audit := builders.NewAuditResultBuilder().WithRepository(repo).Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Contains(t, issues, "allow_update_branch=false(want true)")
+	})
+
+	t.Run("should flag a ruleset whose merge methods still allow rebase", func(t *testing.T) {
+		t.Parallel()
+		// given — non_fast_forward is present, so only the merge-method check
+		// can catch the open fast-forward merge path.
+		audit := builders.NewAuditResultBuilder().
+			WithRuleset(&entities.Ruleset{
+				ID:                  1,
+				Name:                entities.DesiredRulesetName,
+				Enforcement:         "active",
+				HasNonFastForward:   true,
+				AllowedMergeMethods: []string{"merge", "rebase"},
+				TargetsMain:         true,
+				AdminBypass:         true,
+			}).
+			Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Contains(t, issues, "ruleset_allowed_merge_methods=merge+rebase(want merge)")
+	})
+
+	t.Run("should report rule_missing when the ruleset has no pull_request rule", func(t *testing.T) {
+		t.Parallel()
+		// given
+		audit := builders.NewAuditResultBuilder().
+			WithRuleset(&entities.Ruleset{
+				ID:                1,
+				Name:              entities.DesiredRulesetName,
+				Enforcement:       "active",
+				HasNonFastForward: true,
+				TargetsMain:       true,
+				AdminBypass:       true,
+			}).
+			Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Contains(t, issues, "ruleset_allowed_merge_methods=rule_missing(want merge)")
+	})
+
+	t.Run("should skip ruleset merge methods on private repos", func(t *testing.T) {
+		t.Parallel()
+		// given — rulesets need GitHub Pro on private repos, so the whole
+		// ruleset block is carved out there.
+		privateRepo := builders.NewRepositoryBuilder().
+			WithName("closed").
+			AsPrivate().
+			WithSettings(entities.DesiredRepoSettings()).
+			Build()
+		audit := builders.NewAuditResultBuilder().
+			WithRepository(privateRepo).
+			WithoutRuleset().
+			Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		for _, i := range issues {
+			assert.NotContains(t, i, "ruleset_")
+		}
+	})
+
 	t.Run("should distinguish dependabot_alerts=unknown from =off", func(t *testing.T) {
 		t.Parallel()
 		// given — public repo with alerts=nil (API failure).
