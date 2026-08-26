@@ -266,6 +266,105 @@ func TestGoGithubBranchProtectionsRepositoryFindRulesetByName(t *testing.T) {
 	})
 }
 
+func TestGoGithubBranchProtectionsRepositoryUpdateRuleset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should PUT the policy body to the ruleset's own ID", func(t *testing.T) {
+		t.Parallel()
+		// given — a drifted ruleset must be rewritten by ID, not POSTed to
+		// the collection, which GitHub rejects with `422 Name must be unique`.
+		var captured []byte
+		client := newCapturingClient(t, &captured, http.MethodPut, "/api/v3/repos/rios0rios0/example/rulesets/4242")
+		repository := infra.NewGoGithubBranchProtectionsRepository(client)
+
+		// when
+		err := repository.UpdateRuleset(
+			context.Background(), "rios0rios0", "example", 4242, commands.DesiredRuleset())
+
+		// then
+		require.NoError(t, err)
+
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(captured, &body))
+
+		rules, ok := body["rules"].([]any)
+		require.True(t, ok)
+
+		pullRequest := findRule(t, rules, "pull_request")
+		params, ok := pullRequest["parameters"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, []any{"merge"}, params["allowed_merge_methods"])
+		findRule(t, rules, "non_fast_forward")
+	})
+}
+
+func TestGoGithubBranchProtectionsRepositoryFindProtectionByBranch(t *testing.T) {
+	t.Parallel()
+
+	newProtectionServer := func(t *testing.T, status int, body string) *github.Client {
+		t.Helper()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(server.Close)
+
+		client, err := github.NewClient(server.Client()).WithEnterpriseURLs(server.URL, server.URL)
+		require.NoError(t, err)
+		return client
+	}
+
+	t.Run("should treat an unprotected branch as available but disabled", func(t *testing.T) {
+		t.Parallel()
+		// given — go-github turns this exact 404 body into its
+		// ErrBranchNotProtected sentinel, a plain errors.New that carries
+		// neither the status code nor the API's wording. Letting it escape
+		// sets AuditError, which makes phases 2-4 skip the repo silently.
+		client := newProtectionServer(t, http.StatusNotFound, `{"message":"Branch not protected"}`)
+		repository := infra.NewGoGithubBranchProtectionsRepository(client)
+
+		// when
+		protection, err := repository.FindProtectionByBranch(context.Background(), "rios0rios0", "ccswitch", "main")
+
+		// then
+		require.NoError(t, err, "an unprotected branch is a normal state, not an audit failure")
+		assert.True(t, protection.Available)
+		assert.False(t, protection.Enabled)
+	})
+
+	t.Run("should treat a missing branch as available but disabled", func(t *testing.T) {
+		t.Parallel()
+		// given — a repo with no `main` at all still audits; it just has
+		// nothing protected.
+		client := newProtectionServer(t, http.StatusNotFound, `{"message":"Branch not found"}`)
+		repository := infra.NewGoGithubBranchProtectionsRepository(client)
+
+		// when
+		protection, err := repository.FindProtectionByBranch(context.Background(), "rios0rios0", "graphify", "main")
+
+		// then
+		require.NoError(t, err)
+		assert.True(t, protection.Available)
+		assert.False(t, protection.Enabled)
+	})
+
+	t.Run("should mark protection unavailable when the plan forbids it", func(t *testing.T) {
+		t.Parallel()
+		// given
+		client := newProtectionServer(t, http.StatusForbidden, `{"message":"Upgrade to GitHub Pro"}`)
+		repository := infra.NewGoGithubBranchProtectionsRepository(client)
+
+		// when
+		protection, err := repository.FindProtectionByBranch(context.Background(), "rios0rios0", "private", "main")
+
+		// then
+		require.NoError(t, err)
+		assert.False(t, protection.Available)
+	})
+}
+
 func findRule(t *testing.T, rules []any, ruleType string) map[string]any {
 	t.Helper()
 

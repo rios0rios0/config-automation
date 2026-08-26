@@ -182,16 +182,38 @@ func (c ApplyBranchProtectionCommand) applyRuleset(
 		emitChange(listeners.OnChange, change)
 		return true
 	}
-	err := c.branchProtectionRepo.CreateRuleset(
-		ctx,
-		input.Owner,
-		audit.Repository.Name,
-		DesiredRuleset(),
-	)
-	if err != nil {
-		listeners.OnError(audit.Repository.Name, fmt.Errorf("creating ruleset: %w", err))
-		return false
+
+	// A ruleset the audit already found is drifted, not absent: it exists
+	// under the policy name but its body predates a policy change. GitHub
+	// rejects a POST whose name is taken with `422 Name must be unique`,
+	// so the only way to bring it into line is to rewrite it by ID.
+	// Creating is correct exclusively when there is nothing there.
+	var err error
+	if audit.Ruleset != nil {
+		err = c.branchProtectionRepo.UpdateRuleset(
+			ctx,
+			input.Owner,
+			audit.Repository.Name,
+			audit.Ruleset.ID,
+			DesiredRuleset(),
+		)
+		if err != nil {
+			listeners.OnError(audit.Repository.Name, fmt.Errorf("updating ruleset: %w", err))
+			return false
+		}
+	} else {
+		err = c.branchProtectionRepo.CreateRuleset(
+			ctx,
+			input.Owner,
+			audit.Repository.Name,
+			DesiredRuleset(),
+		)
+		if err != nil {
+			listeners.OnError(audit.Repository.Name, fmt.Errorf("creating ruleset: %w", err))
+			return false
+		}
 	}
+
 	change.Applied = true
 	emitChange(listeners.OnChange, change)
 	return true

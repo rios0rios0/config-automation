@@ -4,6 +4,7 @@ package commands_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,6 +38,73 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 		assert.Len(t, protectionRepo.ProtectionSaves, 1)
 		assert.Contains(t, protectionRepo.SignaturesEnabled, audit.Repository.Name)
 		assert.Contains(t, protectionRepo.RulesetsCreated, audit.Repository.Name)
+	})
+
+	t.Run("should update the ruleset in place when a drifted one already exists", func(t *testing.T) {
+		t.Parallel()
+		// given — the shape every already-hardened repo is in after a policy
+		// change: a `main-protection` ruleset exists but predates the
+		// pull_request rule. Creating would hit `422 Name must be unique`.
+		drifted := &entities.Ruleset{
+			ID:                4242,
+			Name:              entities.DesiredRulesetName,
+			Enforcement:       "active",
+			HasNonFastForward: true,
+			TargetsMain:       true,
+			AdminBypass:       true,
+		}
+		audit := builders.NewAuditResultBuilder().WithRuleset(drifted).Build()
+		protectionRepo := doubles.NewInMemoryBranchProtectionsRepository()
+		command := commands.NewApplyBranchProtectionCommand(protectionRepo)
+
+		// when
+		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
+			OnSuccess: func(_, _ int) {},
+			OnError:   func(_ string, _ error) {},
+		})
+
+		// then
+		assert.Contains(t, protectionRepo.RulesetsUpdated, audit.Repository.Name)
+		assert.Empty(t, protectionRepo.RulesetsCreated, "must not POST over an existing ruleset name")
+	})
+
+	t.Run("should create rather than update when no ruleset exists", func(t *testing.T) {
+		t.Parallel()
+		// given
+		audit := builders.NewAuditResultBuilder().WithoutRuleset().Build()
+		protectionRepo := doubles.NewInMemoryBranchProtectionsRepository()
+		command := commands.NewApplyBranchProtectionCommand(protectionRepo)
+
+		// when
+		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
+			OnSuccess: func(_, _ int) {},
+			OnError:   func(_ string, _ error) {},
+		})
+
+		// then
+		assert.Contains(t, protectionRepo.RulesetsCreated, audit.Repository.Name)
+		assert.Empty(t, protectionRepo.RulesetsUpdated)
+	})
+
+	t.Run("should report an update failure without falling back to create", func(t *testing.T) {
+		t.Parallel()
+		// given
+		drifted := &entities.Ruleset{ID: 7, Name: entities.DesiredRulesetName, Enforcement: "active"}
+		audit := builders.NewAuditResultBuilder().WithRuleset(drifted).Build()
+		protectionRepo := doubles.NewInMemoryBranchProtectionsRepository()
+		protectionRepo.ErrorOnUpdateRuleset = errors.New("boom")
+		command := commands.NewApplyBranchProtectionCommand(protectionRepo)
+
+		// when
+		var failures []string
+		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
+			OnSuccess: func(_, _ int) {},
+			OnError:   func(name string, _ error) { failures = append(failures, name) },
+		})
+
+		// then
+		assert.Equal(t, []string{audit.Repository.Name}, failures)
+		assert.Empty(t, protectionRepo.RulesetsCreated)
 	})
 
 	t.Run("should skip private repos entirely", func(t *testing.T) {
