@@ -27,7 +27,8 @@ func (a AuditResult) HasForcePushRuleset() bool {
 // ComputeIssues returns the list of non-compliance strings for this
 // audit. Fork and private carve-outs mirror the Python original:
 //
-//   - forks skip Dependabot and secret scanning (upstream syncs wipe them).
+//   - forks skip Dependabot, secret scanning, branch protection and the
+//     ruleset (their default branch tracks upstream, not this policy).
 //   - private repos on GitHub Free skip allow_auto_merge (silent noop),
 //     secret scanning, branch protection, and the ruleset.
 //   - the wiki setting is skipped for repos in DesiredWikiAllowlist.
@@ -47,10 +48,19 @@ func (a AuditResult) ComputeIssues() []string {
 		return issues
 	}
 
-	if !a.Repository.Fork {
-		issues = append(issues, a.secretScanningIssues()...)
+	// A fork's default branch tracks the upstream project rather than this
+	// account's policy: syncing rebases it onto the community version and
+	// force-pushes, which is precisely what branch protection and the
+	// non-fast-forward ruleset exist to stop. Enforcing them would either
+	// break the sync or report a violation nobody intends to fix -- and the
+	// ruleset targets `main` by name, which a fork need not even use. Forks
+	// are therefore exempt here for the same reason they already skip
+	// Dependabot and secret scanning above.
+	if a.Repository.Fork {
+		return issues
 	}
 
+	issues = append(issues, a.secretScanningIssues()...)
 	issues = append(issues, a.branchProtectionIssues()...)
 	issues = append(issues, a.rulesetIssues()...)
 	return issues

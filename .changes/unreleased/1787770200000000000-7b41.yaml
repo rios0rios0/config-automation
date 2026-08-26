@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed the daily compliance audit reporting a fork as non-compliant. A fork''s default branch tracks the upstream project: syncing rebases it onto the community version and force-pushes, which is exactly what branch protection and the non-fast-forward ruleset exist to prevent, and the ruleset targets `main` by name where a fork need not use that branch at all. Enforcing either would break the sync or report a violation nobody intends to fix, so forks now skip both checks for the same reason they already skipped Dependabot and secret scanning. `rios0rios0` goes from 1 non-compliant repository to 0'
+time: '2026-08-26T19:50:00.000000000Z'

@@ -56,6 +56,43 @@ func TestAuditResultComputeIssues(t *testing.T) {
 		assert.Empty(t, issues)
 	})
 
+	t.Run("should skip branch protection and the ruleset on forks", func(t *testing.T) {
+		t.Parallel()
+		// given — a public fork whose default branch carries no protection and
+		// no ruleset, which is the normal state of a mirror that gets rebased
+		// onto upstream and force-pushed on every sync.
+		repo := builders.NewRepositoryBuilder().AsFork().WithCompliantSettings().Build()
+		audit := builders.NewAuditResultBuilder().
+			WithRepository(repo).
+			WithBranchProtection(entities.BranchProtection{Available: true, Enabled: false}).
+			WithoutRuleset().
+			Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.NotContains(t, issues, "branch_protection=off")
+		assert.NotContains(t, issues, "ruleset_non_fast_forward=missing")
+	})
+
+	t.Run("should still flag branch protection off on a non-fork", func(t *testing.T) {
+		t.Parallel()
+		// given — the same unprotected state on a repo this account owns
+		// outright, where the policy does apply.
+		repo := builders.NewRepositoryBuilder().WithCompliantSettings().Build()
+		audit := builders.NewAuditResultBuilder().
+			WithRepository(repo).
+			WithBranchProtection(entities.BranchProtection{Available: true, Enabled: false}).
+			Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Contains(t, issues, "branch_protection=off")
+	})
+
 	t.Run("should skip secret scanning on private repos", func(t *testing.T) {
 		t.Parallel()
 		// given
