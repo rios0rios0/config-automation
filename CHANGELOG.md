@@ -22,6 +22,10 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+### Changed
+
+- changed the Claude review workflow's display name to `Claude Review`, so it matches its file name and its `Claude Mention` sibling.
+
 ## [0.8.0] - 2026-08-26
 
 ### Added
@@ -236,7 +240,6 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ### Removed
 
-- removed the unused `id-token: write` permission from the `refresh` job in `.github/workflows/ai-docs-refresh.yaml` since the workflow authenticates via a PAT and the Claude Code OAuth token rather than OIDC
 
 ## [0.1.1] - 2026-04-22
 
