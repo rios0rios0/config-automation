@@ -60,12 +60,39 @@ Today the in-scope set is the AI-assistant guidance files only. Three files are 
 - Restatements of what `README.md` already covers well — link or summarize, don't duplicate.
 - Per-language conventions that come from the user's global rules (those are already in the assistant's context). **This exclusion does not apply to `.github/skills/code-review/SKILL.md`**: a Copilot review running on a pull request has none of those global rules loaded, which is exactly why the skill restates them and links the guide pages they come from.
 
+## Recording the change
+
+Record the refresh **if and only if you modified one of the three in-scope files.** How you record it depends on which changelog convention the repository follows — the two are mutually exclusive, and the host workflow tells you which one applies in the `## Changelog convention for this repository` section appended below this prompt. It also grants you only the tool the applicable convention needs, so the wrong one is not merely discouraged, it is impossible.
+
+### If the repository uses chlog
+
+A repository uses [chlog](https://github.com/luizjhonata/chlog) when `.chlog.yaml`, `.chlog.yml`, or a `.changes/unreleased/` directory exists at its root. `CHANGELOG.md` is then **generated** from fragments and is never edited by hand: an entry typed straight into it is discarded by the next `chlog batch`, and it reintroduces on that one file exactly the rebase conflicts the fragments exist to prevent.
+
+Write one new fragment per entry at `.changes/unreleased/<nanoseconds>-<4 hex characters>.yaml` — for example `.changes/unreleased/1788280619740162307-0baa.yaml`. Any plausible nanosecond timestamp and any four hex characters will do; the name only has to be unique within the directory. Never modify a fragment that is already there.
+
+The fragment has exactly three keys, in this order, every value single-quoted:
+
+```yaml
+kind: 'Changed'
+body: 'refreshed `CLAUDE.md` to document the new `make test-integration` target'
+time: '2026-09-01T07:12:44.512930411Z'
+```
+
+- `kind` — `Changed` when you edited a file that already existed, `Added` when you created one. If `.chlog.yaml` defines a `kinds:` list, the value must be one of its `label:` entries.
+- `body` — the sentence you would otherwise have written as a `- ` bullet: simple past tense, lowercase first word, file names in backticks, no trailing period. A single quote inside the body must be doubled (`''`) — that is how YAML escapes it inside a single-quoted scalar.
+- `time` — RFC 3339 with nanoseconds, UTC, `Z`-suffixed.
+
+Two entries of different kinds (you created one file and edited another) mean two fragments, not one fragment with two sentences.
+
+### If the repository does not use chlog
+
+Add a short entry to `CHANGELOG.md` under the `[Unreleased]` section. Use `### Changed` for edits to existing files and `### Added` if you created one of them. Write the entry in simple past tense, starting with a lowercase verb, and wrap file names in backticks — example: `- refreshed \`CLAUDE.md\` to document the new \`make test-integration\` target`. If the `[Unreleased]` section does not exist, add it immediately above the most recent version heading. If `CHANGELOG.md` does not exist in the repo, skip this step — do not create one.
+
 ## Commit discipline
 
 - If and only if you modify `CLAUDE.md`, `.github/copilot-instructions.md`, or `.github/skills/code-review/SKILL.md`, the host workflow will detect the diff and open a PR. You do not need to run git commands yourself.
-- If you decide all three files are accurate (or should not be created), do nothing. Weekly no-op runs are expected and correct.
-- **If (and only if) you modified one of the three in-scope files, also add a short entry to `CHANGELOG.md` under the `[Unreleased]` section describing the refresh.** Use `### Changed` for edits to existing files and `### Added` if you created one of them. Write the entry in simple past tense, starting with a lowercase verb, and wrap file names in backticks — example: `- refreshed \`CLAUDE.md\` to document the new \`make test-integration\` target`. If `CHANGELOG.md` does not exist in the repo, skip this step — do not create one. If the `[Unreleased]` section does not exist, add it immediately above the most recent version heading.
-- Never edit any file other than `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/skills/code-review/SKILL.md`, or (when the above rule applies) `CHANGELOG.md`. Never run destructive commands. Never push, tag, or merge.
+- If you decide all three files are accurate (or should not be created), do nothing. Weekly no-op runs are expected and correct. A changelog fragment or `CHANGELOG.md` entry on its own never opens a PR, so never write one for a refresh you did not make.
+- Never edit any file other than `CLAUDE.md`, `.github/copilot-instructions.md`, `.github/skills/code-review/SKILL.md`, and whichever changelog target the section above applies to. Never run destructive commands. Never push, tag, or merge.
 
 ## Tone
 
