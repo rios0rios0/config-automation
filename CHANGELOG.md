@@ -22,6 +22,12 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-01
+
+### Changed
+
+- refreshed `.github/copilot-instructions.md` and `.github/skills/code-review/SKILL.md` to describe the ruleset compliance check as four-part (`Ruleset.IsCompliant`: name match, `non_fast_forward`, `allowed_merge_methods` equal to `DesiredAllowedMergeMethods()`, and `refs/heads/main`) instead of the stale three-part check, and documented the two-layer merge shape and the phase-4 create-vs-update-by-ID rule the `0.8.0` `allowed_merge_methods` policy introduced
+
 ## [0.8.1] - 2026-08-28
 
 ### Changed
