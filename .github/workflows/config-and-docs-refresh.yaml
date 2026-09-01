@@ -25,6 +25,11 @@ on:
         required: false
         type: 'number'
         default: 50
+      stale_after_days:
+        description: 'Skip a repo whose default branch has not moved in this many days (defaults to 8, one day past the weekly cadence). Set to 0 to refresh every repo regardless.'
+        required: false
+        type: 'number'
+        default: 8
 
 concurrency:
   group: 'config-and-docs-refresh'
@@ -261,6 +266,12 @@ jobs:
           REFRESH_BRANCH: 'chore/config-and-docs-refresh'
           REPOS: ${{ toJSON(matrix.batch.repos) }}
           MAX_TURNS: ${{ inputs.max_turns || '50' }}
+          STALE_AFTER_DAYS: ${{ inputs.stale_after_days || '8' }}
+          # Empty on a scheduled run. Read only by the activity gate, which a
+          # deliberate single-repo request overrides; under `set -u` an unset
+          # name would abort the step, so it is declared here rather than
+          # assumed to exist because the `discover` job also declares it.
+          REPO_INPUT: ${{ inputs.repo }}
         run: |
           set -euo pipefail
           git config --global user.name 'config-bot'
@@ -274,7 +285,39 @@ jobs:
           prs_updated=()
           no_drift=()
           quota_skipped=()
+          unchanged=()
           quota_hit=0
+
+          # A repo whose *code* has not moved since the previous run describes
+          # the same reality the previous run already judged, so the only drift
+          # left to find is prose the model would re-litigate --- which is what
+          # made 47 of 76 repos (62%) produce a pull request in a single week,
+          # one week after the same job had refreshed them. Measured, not
+          # assumed: `rios0rios0/srt` yielded two entries on 2026-08-31 and none
+          # on 2026-09-01, against an unchanged `main`.
+          #
+          # "Code" excludes everything this workflow itself writes, and that
+          # exclusion is the whole design. The obvious signal --- the default
+          # branch's HEAD date --- is self-defeating here: merging a refresh PR
+          # moves `main`, so every repo this job touched last week looks busy
+          # the next week and gets refreshed again, which is precisely the loop
+          # the gate exists to break. `pushed_at` is worse still, since it also
+          # moves when the job force-pushes its own branch. Asking instead for
+          # the last commit that changed anything OUTSIDE the refresh's own
+          # output skips over the refresh commit, its merge commit, and the
+          # bump ceremony that follows, and reports when the code the docs
+          # describe actually changed.
+          #
+          # Stateless on purpose --- no cache, no artifact, no marker branch to
+          # go stale. `stale_after_days` is one day past the weekly cadence, so
+          # a repo is skipped only after a full quiet cycle.
+          if [ "${STALE_AFTER_DAYS}" -gt 0 ] 2>/dev/null; then
+            stale_cutoff=$(date -u -d "${STALE_AFTER_DAYS} days ago" +%s)
+            echo "Skipping repos whose default branch has not moved since $(date -u -d "@${stale_cutoff}" '+%Y-%m-%d %H:%M UTC')."
+          else
+            stale_cutoff=0
+            echo 'stale_after_days=0: every repo will be refreshed regardless of activity.'
+          fi
 
           total=$(echo "${REPOS}" | jq 'length')
           idx=0
@@ -316,6 +359,34 @@ jobs:
               failed+=("checkout: ${target_repo}")
               rm -rf "${target}"
               continue
+            fi
+
+            # Activity gate. It sits AFTER the clone and BEFORE the `claude`
+            # call on purpose: the clone is seconds and gives the commit date
+            # for free, where the `claude` call is ~3 minutes and the whole
+            # cost being avoided. A single-repo `workflow_dispatch` run is
+            # never skipped --- asking for one repo by name is an explicit
+            # override of the cadence.
+            if [ "${stale_cutoff}" -gt 0 ] && [ -z "${REPO_INPUT}" ]; then
+              # `-C` puts cwd at the repo root, so `.` is the whole tree. An
+              # empty result (epoch 0) means every commit in history touched
+              # only excluded paths --- unknowable rather than stale, so the
+              # repo is refreshed. Failing open is the right direction: the
+              # cost of a needless refresh is minutes, the cost of a wrongly
+              # skipped one is documentation that rots unnoticed.
+              code_epoch=$(git -C "${target}" log -1 --format=%ct -- . \
+                ':(exclude)CLAUDE.md' \
+                ':(exclude).github/copilot-instructions.md' \
+                ':(exclude).github/skills/code-review/SKILL.md' \
+                ':(exclude).changes' \
+                ':(exclude)CHANGELOG.md' 2>/dev/null || echo 0)
+              code_epoch="${code_epoch:-0}"
+              if [ "${code_epoch}" -gt 0 ] && [ "${code_epoch}" -lt "${stale_cutoff}" ]; then
+                echo "--> nothing but this job's own output has changed since $(date -u -d "@${code_epoch}" +%F); skipping."
+                unchanged+=("${target_repo}")
+                rm -rf "${target}"
+                continue
+              fi
             fi
 
             # Changelog convention, decided per repo and enforced by the
@@ -575,6 +646,7 @@ jobs:
           echo
           echo '==== Batch summary ===='
           echo "processed (${idx}/${total})"
+          echo "unchanged (${#unchanged[@]}): ${unchanged[*]:-}"
           echo "no_drift (${#no_drift[@]}): ${no_drift[*]:-}"
           echo "prs_created (${#prs_created[@]}): ${prs_created[*]:-}"
           echo "prs_updated (${#prs_updated[@]}): ${prs_updated[*]:-}"
