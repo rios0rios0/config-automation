@@ -231,17 +231,23 @@ jobs:
         run: 'npm install -g @anthropic-ai/claude-code'
 
       # Tool allowlist locked down to exactly what the refresh prompt
-      # needs: read the repo, and edit/create the three guidance files
+      # needs: read the repo, edit/create the three guidance files
       # (`CLAUDE.md`, `.github/copilot-instructions.md`, and the Copilot
-      # code-review skill at `.github/skills/code-review/SKILL.md`) plus
-      # the CHANGELOG (so Claude can record what it changed, per the prompt
-      # rule). Without this allowlist, telemetry showed ~30 `permission_denials_count`
-      # per run because the CLI probes many tools but the default harness
-      # denies most of them, which burned turns and API spend on every
-      # no-drift no-op. See `scripts/refresh_config_and_docs_prompt.md`
-      # for the rule that matches this allowlist. `--max-turns 30` bounds
-      # each repo invocation so a stuck reasoning loop cannot chew through
-      # the whole job-timeout budget.
+      # code-review skill at `.github/skills/code-review/SKILL.md`), plus
+      # whichever changelog target that repository's convention calls for
+      # --- see `changelog_mode` in the loop below. Without this allowlist,
+      # telemetry showed ~30 `permission_denials_count` per run because the
+      # CLI probes many tools but the default harness denies most of them,
+      # which burned turns and API spend on every no-drift no-op. See
+      # `scripts/refresh_config_and_docs_prompt.md` for the rules that match
+      # this allowlist. `--max-turns` bounds each repo invocation so a stuck
+      # reasoning loop cannot chew through the whole job-timeout budget.
+      #
+      # Every grant is spelled `Edit(...)`, never `Write(...)`: the CLI
+      # matches file permissions on `Edit` rules alone --- an `Edit` grant
+      # covers every file-editing tool, including `Write`, while a `Write`
+      # rule is inert and only earns a warning on stderr. Creating a file
+      # the repo did not have is therefore already covered.
       - name: 'Process batch ${{ matrix.batch.name }}'
         env:
           # Every batch is single-owner (the discover job chunks within each owner), so
@@ -312,6 +318,44 @@ jobs:
               continue
             fi
 
+            # Changelog convention, decided per repo and enforced by the
+            # allowlist rather than by instruction alone. A chlog repo
+            # *generates* `CHANGELOG.md` from the fragments under
+            # `.changes/unreleased/`, so an entry written straight into it is
+            # discarded by the next `chlog batch` and puts back, on that one
+            # file, the rebase conflicts the fragments exist to prevent. The
+            # 2026-08-31 run wrote 46 such entries because the prompt told
+            # Claude to edit the CHANGELOG and the grant let it. Granting only
+            # the tool the applicable convention needs makes the wrong one
+            # impossible, not merely discouraged.
+            #
+            # The predicate is copied verbatim from the `pipelines`
+            # basic-checks gate (which in turn mirrors AutoBump's
+            # `DetectChlog`), so the three cannot disagree about whether a
+            # repository uses chlog. A config file is optional --- chlog falls
+            # back to its built-in defaults --- which is why the fragment
+            # directory alone counts.
+            if [ -f "${target}/.chlog.yaml" ] || [ -f "${target}/.chlog.yml" ] || [ -d "${target}/.changes/unreleased" ]; then
+              changelog_mode='chlog'
+              changelog_tools=',Edit(/.changes/unreleased/**)'
+              changelog_note='This repository uses chlog. `CHANGELOG.md` is generated from the fragments under `.changes/unreleased/` and you have not been granted any tool that can edit it. Record the refresh as a new fragment, exactly as described under "If the repository uses chlog".'
+            elif [ -f "${target}/CHANGELOG.md" ]; then
+              changelog_mode='changelog'
+              changelog_tools=',Edit(/CHANGELOG.md)'
+              changelog_note='This repository does not use chlog. Record the refresh directly in `CHANGELOG.md` under `[Unreleased]`, exactly as described under "If the repository does not use chlog".'
+            else
+              changelog_mode='none'
+              changelog_tools=''
+              changelog_note='This repository has neither chlog nor a `CHANGELOG.md`. Do not record the refresh anywhere --- just edit whichever in-scope files drifted.'
+            fi
+            echo "--> changelog convention: ${changelog_mode}"
+            # Built with printf rather than a literal multi-line string: the
+            # appended section has to sit at column 0 to read as Markdown, and
+            # a column-0 line inside this block scalar would end the YAML
+            # document.
+            repo_prompt="$(printf '%s\n\n---\n\n## Changelog convention for this repository\n\n%s\n' \
+              "${PROMPT_CONTENT}" "${changelog_note}")"
+
             # `</dev/null` is load-bearing: without it `claude -p` inherits
             # the outer `while read` loop's stdin (the jq pipe) and consumes
             # the rest of the repo list, so the loop exits silently after
@@ -343,10 +387,10 @@ jobs:
             # almost always 0 and would mask claude failures.
             rm -f "${CLAUDE_LOG}"
             set +e
-            ( cd "${target}" && claude -p "${PROMPT_CONTENT}" \
+            ( cd "${target}" && claude -p "${repo_prompt}" \
                   --model 'claude-opus-4-8' \
                   --max-turns "${MAX_TURNS}" \
-                  --allowedTools 'Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/.github/skills/code-review/SKILL.md),Edit(/CHANGELOG.md),Write(/CLAUDE.md),Write(/.github/copilot-instructions.md),Write(/.github/skills/code-review/SKILL.md),Write(/CHANGELOG.md)' </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
+                  --allowedTools "Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/.github/skills/code-review/SKILL.md)${changelog_tools}" </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
             claude_rc=${PIPESTATUS[0]}
             set -e
             if [ "${claude_rc}" -ne 0 ]; then
@@ -365,18 +409,64 @@ jobs:
               continue
             fi
 
+            # Post-refresh enforcement of the chlog convention. The
+            # allowlist above already denies every tool that could reach
+            # `CHANGELOG.md` in a chlog repo, so neither branch here should
+            # ever fire; they exist because the allowlist is the CLI's
+            # promise rather than this workflow's, and a silently-dropped
+            # grant would put the fleet straight back to hand-edited
+            # changelogs. Discarding is always the right resolution: in a
+            # chlog repo the next `chlog batch` discards a hand-edit anyway,
+            # and a fragment already committed by an earlier PR must not be
+            # rewritten by this one --- only brand-new fragments are
+            # legitimate output.
+            if [ "${changelog_mode}" = 'chlog' ]; then
+              if ! git -C "${target}" diff --quiet -- CHANGELOG.md; then
+                echo '--> discarded a hand-edit of CHANGELOG.md: this repo generates it from chlog fragments.'
+                git -C "${target}" checkout -- CHANGELOG.md
+              fi
+              if ! git -C "${target}" diff --quiet -- .changes; then
+                echo '--> discarded edits to existing chlog fragments: only new fragments are allowed.'
+                git -C "${target}" checkout -- .changes
+              fi
+              # A fragment `chlog batch` cannot parse breaks that repo's next
+              # release, which is both far away from here and hard to trace
+              # back. Rejecting the repo now keeps the malformed file out of
+              # the PR and turns the leg red so it is noticed this week.
+              fragment_bad=''
+              while IFS= read -r fragment; do
+                case "${fragment}" in
+                  *.yaml) ;;
+                  *) fragment_bad="${fragment}"; break ;;
+                esac
+                if ! grep -q '^kind: .' "${target}/${fragment}" \
+                  || ! grep -q '^body: .' "${target}/${fragment}" \
+                  || ! grep -q '^time: .' "${target}/${fragment}"; then
+                  fragment_bad="${fragment}"
+                  break
+                fi
+              done < <(git -C "${target}" ls-files --others --exclude-standard -- .changes/unreleased)
+              if [ -n "${fragment_bad}" ]; then
+                echo "--> malformed chlog fragment '${fragment_bad}'; skipping this repo."
+                failed+=("fragment: ${target_repo}")
+                rm -rf "${target}"
+                continue
+              fi
+            fi
+
             # Drift detection. `git add -N` (intent-to-add) makes newly
             # created untracked files visible to `git diff`, so a brand-new
             # CLAUDE.md in a repo that lacked one counts as drift. `git
             # diff -w` ignores whitespace-only changes so cosmetic diffs
-            # don't churn PRs. CHANGELOG.md is intentionally NOT part of
-            # the drift gate: the prompt rule says Claude only touches
-            # CHANGELOG when it also modifies a refresh-scope file, so
-            # gating on the refresh-scope files alone correctly suppresses
-            # spurious PRs from any stray CHANGELOG-only edits. Some repos
-            # may legitimately have none of these files in scope, so only
-            # diff paths that exist after the refresh step and treat "no
-            # in-scope files present" as no drift. Today the in-scope set
+            # don't churn PRs. Neither changelog target --- `CHANGELOG.md`
+            # nor a `.changes/unreleased/` fragment --- is part of the drift
+            # gate: the prompt rule says Claude only records the refresh
+            # when it also modifies a refresh-scope file, so gating on the
+            # refresh-scope files alone correctly suppresses spurious PRs
+            # from any stray changelog-only edit. Some repos may legitimately
+            # have none of these files in scope, so only diff paths that
+            # exist after the refresh step and treat "no in-scope files
+            # present" as no drift. Today the in-scope set
             # is the AI-assistant guidance files plus the Copilot
             # code-review skill; extend `drift_paths` (and the prompt)
             # when adding diagrams or other refresh targets.
@@ -411,6 +501,7 @@ jobs:
             [ -f "${target}/.github/copilot-instructions.md" ] && git -C "${target}" add .github/copilot-instructions.md
             [ -f "${target}/.github/skills/code-review/SKILL.md" ] && git -C "${target}" add .github/skills/code-review/SKILL.md
             [ -f "${target}/CHANGELOG.md" ] && git -C "${target}" add CHANGELOG.md
+            [ -d "${target}/.changes/unreleased" ] && git -C "${target}" add .changes/unreleased
             git -C "${target}" add -u CLAUDE.md .github/copilot-instructions.md .github/skills/code-review/SKILL.md CHANGELOG.md 2>/dev/null || true
 
             if ! git -C "${target}" commit --quiet -m 'chore(refresh): refreshed configuration and documentation'; then
@@ -450,7 +541,7 @@ jobs:
                   --base "${default_branch}" \
                   --head "${REFRESH_BRANCH}" \
                   --title 'chore(refresh): refreshed configuration and documentation' \
-                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\nClaude Code reviewed the in-scope configuration and documentation files (currently `CLAUDE.md`, `.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md`) against the current code, updated whichever drifted, and recorded the change in `CHANGELOG.md` (when the repo has one).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
+                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\nClaude Code reviewed the in-scope configuration and documentation files (currently `CLAUDE.md`, `.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md`) against the current code, updated whichever drifted, and recorded the change as a `.changes/unreleased/` fragment (chlog repositories) or under `[Unreleased]` in `CHANGELOG.md` (everywhere else).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
                 echo "Created ${pr_url}"
                 prs_created+=("${target_repo} (${pr_url})")
               else
