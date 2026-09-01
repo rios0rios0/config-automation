@@ -420,14 +420,32 @@ jobs:
             # and a fragment already committed by an earlier PR must not be
             # rewritten by this one --- only brand-new fragments are
             # legitimate output.
+            #
+            # Both restores are flagged rather than bare. `git diff --quiet`
+            # returns non-zero for a git error as well as for "there are
+            # differences", so the restore can be reached in a state where it
+            # also fails --- and a bare command in an `if` *body* is subject to
+            # `errexit`, which would abort the whole leg mid-loop instead of
+            # failing this one repo. Continuing anyway is not an option either:
+            # a repo whose hand-edited `CHANGELOG.md` could not be reverted
+            # would open a PR carrying exactly the edit this guard exists to
+            # prevent, so the repo is skipped and recorded as
+            # `changelog-guard:`.
             if [ "${changelog_mode}" = 'chlog' ]; then
+              changelog_guard_failed=0
               if ! git -C "${target}" diff --quiet -- CHANGELOG.md; then
                 echo '--> discarded a hand-edit of CHANGELOG.md: this repo generates it from chlog fragments.'
-                git -C "${target}" checkout -- CHANGELOG.md
+                git -C "${target}" checkout -- CHANGELOG.md || changelog_guard_failed=1
               fi
               if ! git -C "${target}" diff --quiet -- .changes; then
                 echo '--> discarded edits to existing chlog fragments: only new fragments are allowed.'
-                git -C "${target}" checkout -- .changes
+                git -C "${target}" checkout -- .changes || changelog_guard_failed=1
+              fi
+              if [ "${changelog_guard_failed}" -eq 1 ]; then
+                echo '--> could not restore the changelog target; skipping this repo.'
+                failed+=("changelog-guard: ${target_repo}")
+                rm -rf "${target}"
+                continue
               fi
               # A fragment `chlog batch` cannot parse breaks that repo's next
               # release, which is both far away from here and hard to trace
