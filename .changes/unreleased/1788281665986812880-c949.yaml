@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'refreshed `.github/copilot-instructions.md` and `.github/skills/code-review/SKILL.md` to describe the ruleset compliance check as four-part (`Ruleset.IsCompliant`: name match, `non_fast_forward`, `allowed_merge_methods` equal to `DesiredAllowedMergeMethods()`, and `refs/heads/main`) instead of the stale three-part check, and documented the two-layer merge shape and the phase-4 create-vs-update-by-ID rule the `0.8.0` `allowed_merge_methods` policy introduced'
+time: '2026-09-01T16:54:25.986721815Z'
