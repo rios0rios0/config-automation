@@ -14,7 +14,7 @@ The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-s
 
 ## Features
 
-- **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags).
+- **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags, and GitHub Actions disabled on forks).
 - **Config and docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates the in-scope configuration and documentation files only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo. Today the in-scope set is `CLAUDE.md`, `.github/copilot-instructions.md`, and the repository's tailored GitHub Copilot code-review skill at `.github/skills/code-review/SKILL.md`; the workflow is intentionally named for the broader scope so future targets (diagrams, additional config files) can be added without renaming.
 - **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the same per-owner refresh PATs — no new secret required.
 
@@ -38,7 +38,10 @@ Each owner's PAT is a fine-grained token scoped to all repositories under that o
 union of what the three workflows do:
 
 - `Administration: read`, `Metadata: read`, `Webhooks: read`, `Dependabot alerts: read` and
-  `Secret scanning alerts: read` — the daily compliance audit.
+  `Secret scanning alerts: read` — the daily compliance audit. `Administration: read` also covers
+  the per-repository GitHub Actions switch (`GET /repos/{owner}/{repo}/actions/permissions`) that
+  the forks rule audits; flipping that switch is phase 3, which — like every other apply phase —
+  only runs locally and needs `Administration: write`.
 - `Contents: write` and `Pull requests: write` — the weekly config/docs refresh branch and PRs, and
   the release-recovery tag pushes. The tag push must come from a PAT: a tag pushed with
   `GITHUB_TOKEN` does not start the delivery workflow.
@@ -135,7 +138,16 @@ The CLI follows the 5-phase compliance model:
   button is left visible but must not be used: it fast-forwards and drops the merge commit. GitHub has
   no single "semi-linear merge" option the way Azure DevOps does, so the policy removes the buttons
   that break the shape instead of selecting one.
-- **Phase 3** (`--phase 3`) — applies security settings (Dependabot, secret scanning, push protection).
+- **Phase 3** (`--phase 3`) — applies security settings (Dependabot, secret scanning, push protection) and
+  disables GitHub Actions on forks.
+
+  Forks are exempt from Dependabot and secret scanning — an upstream sync wipes them — and are instead
+  required to keep the repository-level **GitHub Actions switch off**: a fork carries the upstream's
+  workflows verbatim, and nothing in this account needs a fork to run any. The audit reports a fork
+  whose switch is on as `actions_enabled=true(want false)` (or `actions_enabled=unknown` when the
+  switch could not be read, which is drift to look at rather than compliance), `--dry-run` shows it as
+  `actions_disabled`, and phase 3 turns it off. Repositories of our own are never checked: their
+  workflows are ours.
 - **Phase 4** (`--phase 4`) — applies branch protection and the `main-protection` ruleset.
 - **Phase 5** (`--phase 5`) — re-audits and diffs against the phase-1 snapshot.
 - **`--dry-run`** — runs phases 1-4 with no side effects; prints "would apply" for every mutation.

@@ -118,6 +118,34 @@ func TestReportComplianceChangesCommand(t *testing.T) {
 		assert.Equal(t, 1, reposChanged)
 	})
 
+	t.Run("should emit an actions_enabled diff when a fork's Actions were switched off between snapshots", func(t *testing.T) {
+		t.Parallel()
+		// given
+		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithCompliantSettings().Build()
+		before := builders.NewAuditResultBuilder().WithRepository(forkRepo).WithActionsEnabled(true).Build()
+		after := builders.NewAuditResultBuilder().WithRepository(forkRepo).WithActionsEnabled(false).Build()
+		command := commands.NewReportComplianceChangesCommand()
+
+		var diffs []commands.ComplianceDiff
+		var reposChanged int
+
+		// when
+		command.Execute(commands.ReportComplianceChangesInput{
+			Before: []entities.AuditResult{before},
+			After:  []entities.AuditResult{after},
+		}, commands.ReportComplianceChangesListeners{
+			OnSuccess: func(d []commands.ComplianceDiff, r int) { diffs = d; reposChanged = r },
+		})
+
+		// then
+		require.Len(t, diffs, 1)
+		assert.Equal(t, "rios0rios0/forked", diffs[0].Repository)
+		assert.Equal(t, "actions_enabled", diffs[0].Field)
+		assert.Equal(t, entities.SecurityStateEnabled, diffs[0].Before)
+		assert.Equal(t, entities.SecurityStateDisabled, diffs[0].After)
+		assert.Equal(t, 1, reposChanged)
+	})
+
 	t.Run("should emit no diffs when snapshots are identical", func(t *testing.T) {
 		t.Parallel()
 		// given

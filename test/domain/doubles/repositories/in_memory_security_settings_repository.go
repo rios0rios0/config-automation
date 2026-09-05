@@ -16,11 +16,13 @@ type InMemorySecuritySettingsRepository struct {
 	VulnerabilityAlertsEnabled    []string
 	AutomatedSecurityFixesEnabled []string
 	SecretScanningEnabled         []string
+	ActionsDisabled               []string
 
 	ErrorOnFind                 error
 	ErrorOnEnableAlerts         error
 	ErrorOnEnableFixes          error
 	ErrorOnEnableSecretScanning error
+	ErrorOnDisableActions       error
 }
 
 // NewInMemorySecuritySettingsRepository builds the double.
@@ -70,6 +72,14 @@ func (r *InMemorySecuritySettingsRepository) EnableSecretScanning(_ context.Cont
 		return r.ErrorOnEnableSecretScanning
 	}
 	r.SecretScanningEnabled = append(r.SecretScanningEnabled, name)
+	return nil
+}
+
+func (r *InMemorySecuritySettingsRepository) DisableActions(_ context.Context, _, name string) error {
+	if r.ErrorOnDisableActions != nil {
+		return r.ErrorOnDisableActions
+	}
+	r.ActionsDisabled = append(r.ActionsDisabled, name)
 	return nil
 }
 

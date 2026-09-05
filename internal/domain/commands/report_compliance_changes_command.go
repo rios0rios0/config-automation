@@ -106,6 +106,8 @@ func diffSecurity(before, after entities.AuditResult) []ComplianceDiff {
 		before.Security.DependabotAlertsState(), after.Security.DependabotAlertsState())
 	diffs = appendBoolDiff(diffs, name, "dependabot_updates",
 		before.Security.DependabotUpdates, after.Security.DependabotUpdates)
+	diffs = appendStringDiff(diffs, name, "actions_enabled",
+		before.Security.ActionsState(), after.Security.ActionsState())
 	return diffs
 }
 

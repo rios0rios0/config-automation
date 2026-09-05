@@ -27,7 +27,9 @@ func (a AuditResult) HasForcePushRuleset() bool {
 // ComputeIssues returns the list of non-compliance strings for this
 // audit. Fork and private carve-outs mirror the Python original:
 //
-//   - forks skip Dependabot and secret scanning (upstream syncs wipe them).
+//   - forks skip Dependabot and secret scanning (upstream syncs wipe them)
+//     and must instead keep GitHub Actions disabled; non-forks are not
+//     checked for Actions at all.
 //   - private repos on GitHub Free skip allow_auto_merge (silent noop),
 //     secret scanning, branch protection, and the ruleset.
 //   - the wiki setting is skipped for repos in DesiredWikiAllowlist.
@@ -38,7 +40,9 @@ func (a AuditResult) ComputeIssues() []string {
 
 	issues := a.repoSettingsIssues()
 
-	if !a.Repository.Fork {
+	if a.Repository.Fork {
+		issues = append(issues, a.actionsIssues()...)
+	} else {
 		issues = append(issues, a.dependabotIssues()...)
 	}
 
@@ -104,6 +108,17 @@ func (a AuditResult) dependabotIssues() []string {
 		issues = append(issues, "dependabot_updates=off")
 	}
 	return issues
+}
+
+// actionsIssues enforces DesiredForkActionsEnabled. Only forks reach
+// here. An unreadable switch is reported as unknown rather than assumed
+// off — the same posture as dependabot_alerts, so an API outage or a
+// missing permission shows up as drift instead of as compliance.
+func (a AuditResult) actionsIssues() []string {
+	if a.Security.ActionsEnabled == nil {
+		return []string{"actions_enabled=unknown"}
+	}
+	return checkSetting("actions_enabled", *a.Security.ActionsEnabled, DesiredForkActionsEnabled, false)
 }
 
 func (a AuditResult) secretScanningIssues() []string {

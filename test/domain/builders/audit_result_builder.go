@@ -13,6 +13,9 @@ type AuditResultBuilder struct {
 func NewAuditResultBuilder() *AuditResultBuilder {
 	sig := true
 	alerts := true
+	// A repo of our own runs its workflows, so the compliant default keeps
+	// Actions on; the policy only bites on forks (see WithActionsEnabled).
+	actions := true
 	return &AuditResultBuilder{
 		audit: entities.AuditResult{
 			Repository: NewRepositoryBuilder().WithCompliantSettings().Build(),
@@ -21,6 +24,7 @@ func NewAuditResultBuilder() *AuditResultBuilder {
 				PushProtection:    "enabled",
 				DependabotAlerts:  &alerts,
 				DependabotUpdates: true,
+				ActionsEnabled:    &actions,
 			},
 			BranchProtection: entities.BranchProtection{
 				Available:              true,
@@ -50,6 +54,21 @@ func (b *AuditResultBuilder) WithRepository(repo entities.Repository) *AuditResu
 
 func (b *AuditResultBuilder) WithSecurity(security entities.SecuritySettings) *AuditResultBuilder {
 	b.audit.Security = security
+	return b
+}
+
+// WithActionsEnabled pins the repository-level GitHub Actions switch to a
+// known state. Call it after WithSecurity, which replaces the whole
+// security snapshot.
+func (b *AuditResultBuilder) WithActionsEnabled(enabled bool) *AuditResultBuilder {
+	b.audit.Security.ActionsEnabled = &enabled
+	return b
+}
+
+// WithActionsUnknown mimics a permissions read that failed, which the
+// audit must report rather than treat as disabled.
+func (b *AuditResultBuilder) WithActionsUnknown() *AuditResultBuilder {
+	b.audit.Security.ActionsEnabled = nil
 	return b
 }
 
