@@ -291,6 +291,7 @@ jobs:
           prs_updated=()
           no_drift=()
           quota_skipped=()
+          safeguard_skipped=()
           unchanged=()
           quota_hit=0
 
@@ -490,9 +491,16 @@ jobs:
             #   - safeguard refusal --- Claude declines the repo's content
             #     (e.g. a security-topic repo trips the cybersecurity
             #     safeguard). This is deterministic for that one repo and
-            #     says nothing about the others, so only it is skipped.
+            #     says nothing about the others, so only it is skipped ---
+            #     and skipped is all it is: it goes on the `safeguard_skipped`
+            #     summary line and a `::warning::` annotation, not into
+            #     `failed`, because the leg has nothing to retry and nothing
+            #     it can fix. Counting it as a failure kept the run red for
+            #     as long as that repo tripped it (`intelligencer-door`,
+            #     2026-08-31), which only teaches people to ignore red.
             #   - anything else --- transient API/network error, max-turns
-            #     abort, crash. Also skipped, also non-fatal to the batch.
+            #     abort, crash. Recorded in `failed` (so the leg goes red)
+            #     and skipped, still non-fatal to the rest of the batch.
             #
             # PIPESTATUS[0] holds the subshell's (claude's) exit code;
             # we explicitly do not want `tee`'s exit code, which is
@@ -512,7 +520,8 @@ jobs:
                 quota_hit=1
               elif grep -qEi 'safeguards flagged|cyber-use-case' "${CLAUDE_LOG}"; then
                 echo "--> Claude's safeguards refused this repo (exit ${claude_rc}); moving on to the next one."
-                failed+=("claude-safeguard: ${target_repo}")
+                echo "::warning::Claude's safeguards refused ${target_repo}; it was skipped, not refreshed."
+                safeguard_skipped+=("${target_repo}")
               else
                 echo "--> claude exited ${claude_rc}; moving on to the next repo."
                 failed+=("claude: ${target_repo}")
@@ -692,6 +701,7 @@ jobs:
           echo "prs_created (${#prs_created[@]}): ${prs_created[*]:-}"
           echo "prs_updated (${#prs_updated[@]}): ${prs_updated[*]:-}"
           echo "quota_skipped (${#quota_skipped[@]}): ${quota_skipped[*]:-}"
+          echo "safeguard_skipped (${#safeguard_skipped[@]}): ${safeguard_skipped[*]:-}"
           # One per line: every entry is a "<reason>: <owner>/<repo>" pair,
           # so `${failed[*]}` space-joins them into an unreadable run-on.
           # Plain `"${failed[@]}"` is safe on an empty array under `set -u`:
@@ -702,6 +712,9 @@ jobs:
           for entry in "${failed[@]}"; do
             echo "  - ${entry}"
           done
+          # Only `failed` turns the leg red. `quota_skipped` and
+          # `safeguard_skipped` are reported above but are not failures:
+          # neither is something this leg could have done differently.
           if [ "${#failed[@]}" -gt 0 ]; then
             exit 1
           fi
