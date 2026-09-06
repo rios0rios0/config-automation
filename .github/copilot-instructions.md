@@ -4,12 +4,13 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 
 ## Project Purpose
 
-`config-automation` runs scheduled, cross-repo maintenance against every repository of [`rios0rios0`](https://github.com/rios0rios0), [`medhub-life`](https://github.com/medhub-life), and [`prefy`](https://github.com/prefy). A fine-grained PAT is bound to a single resource owner, so each workflow fans out with `strategy.matrix.owner` and passes each leg one owner (via `HARDEN_OWNER`) and that owner's own token. Repositories are identified by their `owner/name` slug (`entities.Repository.QualifiedName()`), since bare names collide across owners:
+`config-automation` runs scheduled, cross-repo maintenance against every repository of [`rios0rios0`](https://github.com/rios0rios0), [`medhub-life`](https://github.com/medhub-life), and [`prefy`](https://github.com/prefy). A fine-grained PAT is bound to a single resource owner, so each GitHub-facing workflow fans out with `strategy.matrix.owner` and passes each leg one owner (via `HARDEN_OWNER`) and that owner's own token; the SonarQube Cloud workflow has no matrix, because only `rios0rios0` has a SonarQube Cloud organization. Repositories are identified by their `owner/name` slug (`entities.Repository.QualifiedName()`), since bare names collide across owners:
 
 1. **Daily compliance audit** — `.github/workflows/repo-compliance-audit.yaml` runs `go run ./cmd/harden-repos --phase 1 --fail-on-noncompliant` and fails CI when any repo drifts from the hardening policy. Uploads `${TMPDIR:-/tmp}/gh_hardening_audit_before.json` as an artifact.
 2. **Weekly config and docs refresh** — `.github/workflows/config-and-docs-refresh.yaml` enumerates non-fork non-archived repos via `go run ./cmd/harden-repos --list-json`, chunks them into batches of `batch_size` (default `10`) so the matrix has O(repos / batch_size) legs. Each leg installs `@anthropic-ai/claude-code` via `npm`, loads `scripts/refresh_config_and_docs_prompt.md` from the self-checkout, and loops through its batch internally — cloning each target repo and invoking `claude -p ... --max-turns "${MAX_TURNS}" --allowedTools '...' </dev/null` (the `</dev/null` is load-bearing: without it `claude` inherits the loop's stdin from `jq` and drains the batch after the first repo). `claude` output is tee'd to `${WORK_DIR}/.claude.log` so the loop can detect the org-wide `monthly usage limit` message and short-circuit the rest of the batch (skipped repos surface on a `quota_skipped` summary line; the quota-hitting repo is added to `failed` as `claude-quota:` so the leg still goes red). A Claude safeguard refusal (`safeguards flagged` / `cyber-use-case`) is deterministic for that one repo, so it surfaces on a `safeguard_skipped` summary line plus a `::warning::` annotation and does not fail the leg; every other failure kind still does. Drift detection uses `git add -N` + `git diff -w --quiet` on the in-scope files (today: `CLAUDE.md`, `.github/copilot-instructions.md`, and the tailored Copilot code-review skill at `.github/skills/code-review/SKILL.md`); the changelog target is staged with them but excluded from the gate. The in-scope set is duplicated in three places that must be changed together — `drift_paths`, the step's `--allowedTools` grant, and the file list in `scripts/refresh_config_and_docs_prompt.md`. The changelog target is picked per repo and enforced by the grant, not by the prompt: `changelog_mode=chlog` when the clone has `.chlog.yaml`, `.chlog.yml`, or `.changes/unreleased/` — the same predicate the `pipelines` basic-checks gate and AutoBump's `DetectChlog` use (grant `Edit(/.changes/unreleased/**)`, and the prompt tells Claude to write a fragment), `changelog` when it only has `CHANGELOG.md` (grant `Edit(/CHANGELOG.md)`), `none` otherwise. Hand-editing a generated `CHANGELOG.md` is what the 2026-08-31 run did to 46 chlog repositories; withholding the grant is what makes it impossible now, and a post-refresh guard reverts any `CHANGELOG.md`/existing-fragment change in chlog mode and fails the repo with `fragment:` on a malformed new fragment, or `changelog-guard:` when a restore itself fails (flagged, not bare — a bare command in an `if` body would abort the whole leg under `errexit`). Every grant is an `Edit(...)` rule — the CLI matches file permissions on `Edit` alone (it covers `Write` too); a `Write(...)` rule is inert and only warns. Branch name `chore/config-and-docs-refresh` is force-pushed to keep one open PR per repo. `workflow_dispatch` exposes `repo`, `batch_size`, `max_parallel`, and `max_turns` inputs (defaults: `10`, `2`, `50`). The workflow is named for the broader scope so future refresh targets (diagrams, more config files) can be added without renaming.
 3. **Weekly release reconciliation** — `.github/workflows/release-reconcile.yaml` diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the `pipelines` tag-push delivery path so a "bumped but never released" gap (a bump whose `main` run failed the quality gate) is recovered. Enumerates repos via `go run ./cmd/harden-repos --list-json`, delegates detection to the single-sourced `pipelines` primitive `global/scripts/shared/reconcile-releases.sh` (cloned at run time), and orchestrates via `scripts/reconcile-repos.sh`. Pushes with that owner's PAT (a `GITHUB_TOKEN`-pushed tag would not start delivery). `workflow_dispatch` exposes `repo`, `dry_run`, and `fail_on_gap` inputs; results go to `$GITHUB_STEP_SUMMARY`.
-4. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy and all phase commands.
+4. **Daily Sonar analysis policy** — `.github/workflows/sonar-analysis-policy.yaml` runs `go run ./cmd/harden-repos --sonar-policy` against every project of the `rios0rios0` SonarQube Cloud organization (no owner matrix: `medhub-life` and `prefy` have no SonarQube Cloud organization). Per project it adds the missing `sonar.issue.ignore.multicriteria` pairs from `entities.DesiredSonarIssueExclusions()` (`POST api/settings/set`), accepts the still-open issues of those rules (`POST api/issues/bulk_change`, `do_transition=accept`), and marks their `TO_REVIEW` hotspots `REVIEWED`/`SAFE` (`POST api/hotspots/change_status`). The setting cannot be committed to the analyzed repo: automatic analysis reads only `sonar.sources`, `sonar.exclusions`, `sonar.inclusions`, `sonar.tests`, `sonar.test.exclusions`, `sonar.test.inclusions`, `sonar.sourceEncoding`, `sonar.cpd.exclusions`, `sonar.python.version` and `sonar.cfamily.reportingCppStandardOverride` from `.sonarcloud.properties`, with no issue-exclusion key among them. Exclusion and triage are two halves of one fix — the exclusion only binds the next analysis, the triage only clears what is already recorded. `workflow_dispatch` exposes `project` and `dry_run`; the secret is `SONAR_TOKEN` (a SonarQube Cloud *user* token whose user holds `Administer`, `Administer Issues` and `Administer Security Hotspots` on the projects).
+5. **`cmd/harden-repos/`** — the Go CLI that implements the compliance policy and all phase commands.
 
 ## Architecture
 
@@ -23,15 +24,15 @@ config-automation/
 │   ├── container.go                # top-level DI orchestrator
 │   ├── domain/
 │   │   ├── commands/               # one command per phase + `--list-json` + `--dry-run`
-│   │   ├── entities/               # `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`, `compliance_policy.go`
-│   │   └── repositories/           # three port interfaces (repos, security, branch protection)
+│   │   ├── entities/               # `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`, `SonarProject`, `compliance_policy.go`, `sonar_analysis_policy.go`
+│   │   └── repositories/           # four port interfaces (repos, security, branch protection, Sonar projects)
 │   └── infrastructure/
-│       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v75`
+│       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v75`, plus `SonarCloudSonarProjectsRepository` over the SonarQube Cloud Web API
 ├── test/
 │   └── domain/
 │       ├── builders/               # `RepositoryBuilder`, `AuditResultBuilder`
 │       └── doubles/repositories/   # in-memory doubles preferred over `testify/mock`
-├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`, `default.yaml`, `claude-code-review.yaml`, `claude.yaml`
+├── .github/workflows/              # `repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`, `sonar-analysis-policy.yaml`, `default.yaml`, `claude-mention.yaml`, `claude-review.yaml`
 └── scripts/
     └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
@@ -49,6 +50,7 @@ Do not change these without updating the policy tests and the audit flow togethe
 - **Phase 4 creates a ruleset only when the audit found none; a drifted one is updated by ID.** GitHub rejects a POST whose ruleset name is taken with `422 Name must be unique`, so `applyRuleset` branches on `audit.Ruleset != nil` and calls `UpdateRuleset`. Reverting it to a bare `CreateRuleset` breaks every already-hardened repo — the exact failure that hit all 70 repos on the `allowed_merge_methods` rollout.
 - **`BypassActors`** in every ruleset must retain `RepositoryAdminActorType` / `RepositoryAdminActorID` so the owner can force-push; GitHub scopes a bypass actor to the whole ruleset, so it also exempts admins from the merge-method rule.
 - **Phases 2/3/4 re-read the Phase 1 audit**, not the live API — never add per-repo round-trips in the apply phases.
+- **The Sonar policy is scoped by rule key, never by file.** `entities.DesiredSonarIssueExclusions()` excludes `githubactions:S7637` on `**/*.y*ml` (the pattern also covers composite `action.yaml` files, analysed by the same language). Every other rule keeps firing on those files — `S7634`, `S7630` and the rest are real findings that must stay reported — which is why this is an issue exclusion and not a `sonar.exclusions` entry or a deactivated quality-profile rule. `entities.DesiredSonarTriagedRuleKeys()` is *derived* from that list so the two cannot drift, `MergeSonarIssueExclusions` writes the union with whatever the project already had (`api/settings/set` replaces a property set wholesale), and the three sub-steps are attempted independently because `Administer`, `Administer Issues` and `Administer Security Hotspots` are three separate SonarQube Cloud permissions.
 
 ## Build / Test / Lint / Run
 
@@ -70,6 +72,9 @@ HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 4   
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 5   # re-audit + diff snapshot
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run   # phases 1-4, no mutations
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --list-json # matrix input for config-and-docs-refresh
+
+SONAR_TOKEN=<user-token> go run ./cmd/harden-repos --sonar-policy               # SonarQube Cloud analysis policy
+go run ./cmd/harden-repos --sonar-policy --dry-run                              # preview; needs no credential
 ```
 
 ## Environment Variables
@@ -79,8 +84,11 @@ HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --list-json 
 | `HARDEN_OWNER`                   | Comma-separated GitHub owners/orgs to audit, in order (default: `rios0rios0`). The workflows set it to a **single** owner per matrix leg, because a fine-grained PAT is bound to one resource owner. |
 | `GH_TOKEN` / `GITHUB_TOKEN`      | Bearer token for `github.com/google/go-github`.                         |
 | `TMPDIR`                         | Honored by `os.TempDir()` for `gh_hardening_audit_before.json` output.  |
+| `SONAR_TOKEN`                    | SonarQube Cloud **user** token for `--sonar-policy` (not an analysis token). Absent, reads still answer for public projects and every mutation fails with `Insufficient privileges`. |
+| `SONAR_ORGANIZATION`             | Single SonarQube Cloud organization walked by `--sonar-policy` (default `rios0rios0`). Deliberately not `HARDEN_OWNER`: the other owners have no SonarQube Cloud organization. |
+| `SONAR_HOST_URL`                 | SonarQube Cloud base URL (default `https://sonarcloud.io`).             |
 
-Workflow secrets, one fine-grained PAT per owner shared by all three workflows (a fine-grained token is bound to a single resource owner, and each token's lifetime must be 366 days or less): `PERSONAL_ACCESS_TOKEN` (`rios0rios0`), `MEDHUB_ACCESS_TOKEN` (`medhub-life`), `PREFY_ACCESS_TOKEN` (`prefy`) — the same names `autobump-automation` and `autoupdate-automation` use — plus `CLAUDE_CODE_OAUTH_TOKEN` (refresh Claude Code CLI, shared).
+Workflow secrets, one fine-grained PAT per owner shared by the three GitHub workflows (a fine-grained token is bound to a single resource owner, and each token's lifetime must be 366 days or less): `PERSONAL_ACCESS_TOKEN` (`rios0rios0`), `MEDHUB_ACCESS_TOKEN` (`medhub-life`), `PREFY_ACCESS_TOKEN` (`prefy`) — the same names `autobump-automation` and `autoupdate-automation` use — plus `CLAUDE_CODE_OAUTH_TOKEN` (refresh Claude Code CLI, shared) and `SONAR_TOKEN` (SonarQube Cloud user token for the analysis policy; a single organization, so not per-owner).
 
 ## Conventions
 
@@ -89,7 +97,7 @@ Workflow secrets, one fine-grained PAT per owner shared by all three workflows (
 - **YAML files** — `.yaml` (never `.yml`); single-quote string values except where variable interpolation requires double quotes; never quote booleans or numbers.
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
 - **Changelog** — every change writes its own fragment under `.changes/unreleased/` with `chlog new --kind <Kind> --body "..."`, in the same commit; `CHANGELOG.md` is generated from them and is never edited by hand. Keep a Changelog kinds. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.
-- **Actions pins** — every step-level `actions/*` use is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment, never a bare tag (a security decision from `0.3.8`; do not revert a SHA to `@v6`). Keep every workflow on the same latest major: `actions/checkout` v6, `actions/upload-artifact` v7, `actions/setup-go` v6, `actions/setup-node` v6. When bumping, update the SHA and its comment across all three scheduled workflows (`repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`) in the same commit. The `@anthropic-ai/claude-code` npm package is the exception — pinned implicitly to `latest` via `npm install -g`.
+- **Actions pins** — every step-level `actions/*` use is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment, never a bare tag (a security decision from `0.3.8`; do not revert a SHA to `@v6`). Keep every workflow on the same latest major: `actions/checkout` v6, `actions/upload-artifact` v7, `actions/setup-go` v6, `actions/setup-node` v6. When bumping, update the SHA and its comment across all four scheduled workflows (`repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`, `sonar-analysis-policy.yaml`) in the same commit. The `@anthropic-ai/claude-code` npm package is the exception — pinned implicitly to `latest` via `npm install -g`.
 - **Go toolchain** — every `actions/setup-go` step uses `go-version-file: 'go.mod'`, never a hardcoded `go-version`. `setup-go` exports `GOTOOLCHAIN=local`, so a loose spec like `'1.26'` resolves to whatever patch release the runner cached and then hard-fails every `go run` once `go.mod` requires a newer patch. Bumping `go.mod` is enough; the workflows follow.
 
 ## When Editing the Policy
@@ -100,6 +108,8 @@ Ruleset and branch-protection changes propagate to every `rios0rios0` repo on th
 2. Run `HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run` and confirm the non-compliant set matches expectations.
 3. Update `CLAUDE.md`, `README.md`, and this file together.
 4. Record the change in a fragment: `chlog new --kind Changed --body "..."`.
+
+The same applies to `sonar_analysis_policy.go`: a change there rewrites a project setting on every project of the SonarQube Cloud organization on the next daily run, and every rule it lists stops being reported. Preview it with `go run ./cmd/harden-repos --sonar-policy --dry-run` (no credential needed) before merging, and never widen the exclusion from a rule key to a file pattern.
 
 ## Related Repositories
 

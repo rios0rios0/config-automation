@@ -1,0 +1,77 @@
+name: 'Sonar Analysis Policy'
+
+on:
+  schedule:
+    # Daily at 06:30 UTC, right after the compliance audit.
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Limit the run to one project (repository name, or the SonarQube Cloud project key)'
+        required: false
+        type: 'string'
+      dry_run:
+        description: 'Report what would change without mutating anything'
+        required: false
+        default: false
+        type: 'boolean'
+
+concurrency:
+  group: 'sonar-analysis-policy'
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: 'Apply Sonar analysis policy'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    env:
+      # A SonarQube Cloud *user* token (Account > Security), not a project
+      # analysis token: an analysis token can only submit reports, while this job
+      # administers projects. The token's user needs, on every project of the
+      # organization, `Administer` (to write the issue-exclusion setting),
+      # `Administer Issues` (to accept an issue) and
+      # `Administer Security Hotspots` (to mark a hotspot reviewed) --- three
+      # separate permissions, which is also why the CLI attempts the three
+      # sub-steps independently instead of aborting the project on the first
+      # denial. Without the secret the read endpoints still answer for public
+      # projects, so a `dry_run` dispatch works uncredentialed and a real run
+      # fails loudly with the API's own "Insufficient privileges".
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Unlike the GitHub workflows this one does not fan out per owner:
+      # `medhub-life` and `prefy` have no SonarQube Cloud organization, so a
+      # matrix leg for them would only ever return "No organization for key".
+      SONAR_ORGANIZATION: 'rios0rios0'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
+
+      # Derives the toolchain from `go.mod` rather than a hardcoded minor
+      # version. `setup-go` exports `GOTOOLCHAIN=local`, so a `go-version`
+      # spec that resolves to a cached patch release older than the `go`
+      # directive (e.g. `1.26` -> 1.26.4 against `go 1.26.5`) makes every
+      # `go run` hard-fail instead of downloading the newer toolchain.
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16' # v6.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: 'Apply Sonar analysis policy'
+        env:
+          PROJECT: ${{ inputs.project }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # Built with `set --` rather than a flag string so the dispatch
+          # inputs stay single arguments: interpolating them into one
+          # variable and letting the shell split it would turn a project
+          # name containing a space into two flags.
+          set -- --sonar-policy
+          if [ -n "${PROJECT}" ]; then
+            set -- "$@" --repo "${PROJECT}"
+          fi
+          if [ "${DRY_RUN}" = 'true' ]; then
+            set -- "$@" --dry-run
+          fi
+          go run ./cmd/harden-repos "$@"
