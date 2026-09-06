@@ -75,8 +75,9 @@ type SonarConfig struct {
 // the environment. An absent token is not fatal here: every read
 // endpoint the adapter uses answers anonymously for public projects, so
 // `--sonar-policy --dry-run` reports what would change without a
-// credential, and only the mutations fail with the API's own
-// "Insufficient privileges".
+// credential, and only the mutations fail — with the API's own denial
+// message, "Authentication is required" when no token was sent and
+// "Insufficient privileges" when the token's user lacks the right.
 func newSonarConfig() SonarConfig {
 	host := strings.TrimRight(os.Getenv("SONAR_HOST_URL"), "/")
 	if host == "" {

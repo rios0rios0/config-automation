@@ -216,19 +216,69 @@ func TestSonarCloudSonarProjectsRepositoryIssues(t *testing.T) {
 	t.Run("should transition the issues with do_transition=accept and a comment", func(t *testing.T) {
 		t.Parallel()
 		// given
-		repository, requests := newSonarServer(t, map[string]string{"/api/issues/bulk_change": `{"total":2}`})
+		repository, requests := newSonarServer(t, map[string]string{
+			"/api/issues/bulk_change": `{"total":2,"success":2,"ignored":0,"failures":0}`,
+		})
 
 		// when
-		err := repository.AcceptIssues(context.Background(), []string{"i1", "i2"}, entities.DesiredSonarTriageComment)
+		accepted, err := repository.AcceptIssues(
+			context.Background(),
+			[]string{"i1", "i2"},
+			entities.DesiredSonarTriageComment,
+		)
 
 		// then
 		require.NoError(t, err)
+		assert.Equal(t, 2, accepted)
 		require.Len(t, *requests, 1)
 		sent := (*requests)[0]
 		assert.Equal(t, http.MethodPost, sent.Method)
 		assert.Equal(t, "i1,i2", sent.Form.Get("issues"))
 		assert.Equal(t, "accept", sent.Form.Get("do_transition"))
 		assert.Equal(t, entities.DesiredSonarTriageComment, sent.Form.Get("comment"))
+	})
+
+	t.Run("should fail when the server answers 200 having ignored every issue", func(t *testing.T) {
+		t.Parallel()
+		// given — bulk_change reports a refused transition in its body, not
+		// in the status line: a user without `Administer Issues` gets a 200
+		// with everything in `ignored`. Trusting the status code would log
+		// a fully successful run that changed nothing and left the gate red.
+		repository, _ := newSonarServer(t, map[string]string{
+			"/api/issues/bulk_change": `{"total":2,"success":0,"ignored":2,"failures":0}`,
+		})
+
+		// when
+		accepted, err := repository.AcceptIssues(
+			context.Background(),
+			[]string{"i1", "i2"},
+			entities.DesiredSonarTriageComment,
+		)
+
+		// then
+		require.Error(t, err)
+		assert.Equal(t, 0, accepted)
+		assert.Contains(t, err.Error(), "accepted 0 of 2 issues")
+		assert.Contains(t, err.Error(), "Administer Issues")
+	})
+
+	t.Run("should return the partial count when only some issues moved", func(t *testing.T) {
+		t.Parallel()
+		// given
+		repository, _ := newSonarServer(t, map[string]string{
+			"/api/issues/bulk_change": `{"total":2,"success":1,"ignored":0,"failures":1}`,
+		})
+
+		// when
+		accepted, err := repository.AcceptIssues(
+			context.Background(),
+			[]string{"i1", "i2"},
+			entities.DesiredSonarTriageComment,
+		)
+
+		// then
+		require.Error(t, err)
+		assert.Equal(t, 1, accepted)
 	})
 
 	t.Run("should send nothing when no rule is given", func(t *testing.T) {

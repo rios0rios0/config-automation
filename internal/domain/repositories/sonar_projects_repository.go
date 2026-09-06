@@ -38,9 +38,15 @@ type SonarProjectsRepository interface {
 	FindOpenIssuesByRules(ctx context.Context, projectKey string, ruleKeys []string) ([]entities.SonarIssue, error)
 
 	// AcceptIssues transitions the issues to accepted with a comment
-	// (POST api/issues/bulk_change, do_transition=accept). An accepted
-	// issue stops counting toward `new_security_rating`.
-	AcceptIssues(ctx context.Context, issueKeys []string, comment string) error
+	// (POST api/issues/bulk_change, do_transition=accept) and returns how
+	// many the server actually moved. An accepted issue stops counting
+	// toward `new_security_rating`.
+	//
+	// The count is part of the contract because that endpoint reports a
+	// refused transition in its 200 body rather than in the status line:
+	// an implementation that returned only an error would have to invent
+	// "all of them" for the caller to log.
+	AcceptIssues(ctx context.Context, issueKeys []string, comment string) (int, error)
 
 	// FindHotspotsToReviewByRules returns the project's TO_REVIEW
 	// hotspots for the given rules (GET api/hotspots/search). The search

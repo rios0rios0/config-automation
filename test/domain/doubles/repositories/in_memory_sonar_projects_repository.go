@@ -26,8 +26,12 @@ type InMemorySonarProjectsRepository struct {
 	ErrorOnUpdate         error
 	ErrorOnFindIssues     error
 	ErrorOnAccept         error
-	ErrorOnFindHotspots   error
-	ErrorOnReview         error
+	// AcceptedOnError is how many issues the double reports as accepted
+	// alongside ErrorOnAccept, so tests can cover the partial-tally case
+	// api/issues/bulk_change reports in its 200 body.
+	AcceptedOnError     int
+	ErrorOnFindHotspots error
+	ErrorOnReview       error
 }
 
 // NewInMemorySonarProjectsRepository builds the double.
@@ -130,9 +134,9 @@ func (r *InMemorySonarProjectsRepository) AcceptIssues(
 	_ context.Context,
 	issueKeys []string,
 	comment string,
-) error {
+) (int, error) {
 	if r.ErrorOnAccept != nil {
-		return r.ErrorOnAccept
+		return r.AcceptedOnError, r.ErrorOnAccept
 	}
 	r.AcceptedIssueKeys = append(r.AcceptedIssueKeys, issueKeys...)
 	r.Comments = append(r.Comments, comment)
@@ -140,7 +144,7 @@ func (r *InMemorySonarProjectsRepository) AcceptIssues(
 	for projectKey, issues := range r.OpenIssuesByKey {
 		r.OpenIssuesByKey[projectKey] = removeIssues(issues, issueKeys)
 	}
-	return nil
+	return len(issueKeys), nil
 }
 
 func (r *InMemorySonarProjectsRepository) FindHotspotsToReviewByRules(

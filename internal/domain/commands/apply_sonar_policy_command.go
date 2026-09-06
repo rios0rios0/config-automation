@@ -37,9 +37,11 @@ func NewApplySonarPolicyCommand(sonarRepo repositories.SonarProjectsRepository) 
 }
 
 // ApplySonarPolicyInput selects the organization to walk. ProjectFilter,
-// when set, narrows the run to the single project whose *name* (the repo
-// name, not the project key) matches. DryRun reports every mutation
-// without performing it.
+// when set, narrows the run to the single project whose name or key
+// matches it exactly — the name is the repository name and is what the
+// CLI's `--repo` normally carries, while the key covers a renamed
+// project whose key no longer follows from its name. DryRun reports
+// every mutation without performing it.
 type ApplySonarPolicyInput struct {
 	Organization  string
 	ProjectFilter string
@@ -191,13 +193,22 @@ func (c ApplySonarPolicyCommand) acceptIssues(
 		return len(keys)
 	}
 
-	if acceptErr := c.sonarRepo.AcceptIssues(ctx, keys, entities.DesiredSonarTriageComment); acceptErr != nil {
+	// The count comes back from the repository rather than being assumed
+	// to be len(keys): api/issues/bulk_change answers 200 with a tally,
+	// so a denied transition arrives as "0 accepted", not as an error
+	// status. Reporting len(keys) here would log a fully successful run
+	// that changed nothing.
+	accepted, acceptErr := c.sonarRepo.AcceptIssues(ctx, keys, entities.DesiredSonarTriageComment)
+	if acceptErr != nil {
 		listeners.OnError(project.Key, fmt.Errorf("accepting issues: %w", acceptErr))
+	}
+	if accepted == 0 {
 		return 0
 	}
 	change.Applied = true
+	change.Count = accepted
 	emitSonarChange(listeners.OnChange, change)
-	return len(keys)
+	return accepted
 }
 
 // reviewHotspots marks the project's TO_REVIEW hotspots for the policy

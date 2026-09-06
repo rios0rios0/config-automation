@@ -153,7 +153,7 @@ func (r SonarCloudSonarProjectsRepository) UpdateIssueExclusions(
 		}
 		form.Add("fieldValues", string(encoded))
 	}
-	return r.post(ctx, "api/settings/set", form)
+	return r.post(ctx, "api/settings/set", form, nil)
 }
 
 // FindOpenIssuesByRules pages through api/issues/search restricted to
@@ -206,25 +206,52 @@ func (r SonarCloudSonarProjectsRepository) FindOpenIssuesByRules(
 }
 
 // AcceptIssues transitions issues to accepted via api/issues/bulk_change
-// in chunks of sonarBulkChangeLimit. Requires `Administer Issues` on the
-// project.
+// in chunks of sonarBulkChangeLimit, returning how many the server
+// actually moved. Requires `Administer Issues` on the project.
+//
+// **This endpoint does not report a refused transition through the
+// status line.** It answers 200 with a per-issue tally, and an issue the
+// caller may not transition — the token's user is authenticated but
+// lacks `Administer Issues` there — is counted in `ignored`, not raised
+// as an error. Treating any 2xx as success would let the daily run log
+// "26 issues accepted", exit 0, and leave all 26 open with the gate
+// still red, which is the exact silent pass the sibling write paths
+// avoid only because they do return 403.
 func (r SonarCloudSonarProjectsRepository) AcceptIssues(
 	ctx context.Context,
 	issueKeys []string,
 	comment string,
-) error {
+) (int, error) {
+	accepted := 0
+
 	for start := 0; start < len(issueKeys); start += sonarBulkChangeLimit {
 		end := min(start+sonarBulkChangeLimit, len(issueKeys))
+
+		var tally struct {
+			Total    int `json:"total"`
+			Success  int `json:"success"`
+			Ignored  int `json:"ignored"`
+			Failures int `json:"failures"`
+		}
 
 		form := url.Values{}
 		form.Set("issues", strings.Join(issueKeys[start:end], ","))
 		form.Set("do_transition", "accept")
 		form.Set("comment", comment)
-		if err := r.post(ctx, "api/issues/bulk_change", form); err != nil {
-			return err
+		if err := r.post(ctx, "api/issues/bulk_change", form, &tally); err != nil {
+			return accepted, err
+		}
+
+		accepted += tally.Success
+		if tally.Ignored > 0 || tally.Failures > 0 {
+			return accepted, fmt.Errorf(
+				"api/issues/bulk_change accepted %d of %d issues (%d ignored, %d failed): "+
+					"the token's user is most likely missing `Administer Issues` on the project",
+				tally.Success, tally.Total, tally.Ignored, tally.Failures,
+			)
 		}
 	}
-	return nil
+	return accepted, nil
 }
 
 // FindHotspotsToReviewByRules pages through api/hotspots/search for
@@ -300,7 +327,7 @@ func (r SonarCloudSonarProjectsRepository) MarkHotspotReviewedSafe(
 	form.Set("status", "REVIEWED")
 	form.Set("resolution", "SAFE")
 	form.Set("comment", comment)
-	return r.post(ctx, "api/hotspots/change_status", form)
+	return r.post(ctx, "api/hotspots/change_status", form, nil)
 }
 
 // sonarPaging is the paging block every SonarQube search returns.
@@ -345,7 +372,15 @@ func (r SonarCloudSonarProjectsRepository) get(
 	return nil
 }
 
-func (r SonarCloudSonarProjectsRepository) post(ctx context.Context, path string, form url.Values) error {
+// post sends a form-encoded POST. When out is non-nil the response body
+// is decoded into it, which is how AcceptIssues reads the only feedback
+// api/issues/bulk_change gives; the endpoints that answer 204 pass nil.
+func (r SonarCloudSonarProjectsRepository) post(
+	ctx context.Context,
+	path string,
+	form url.Values,
+	out any,
+) error {
 	endpoint := r.host + "/" + path
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -360,7 +395,16 @@ func (r SonarCloudSonarProjectsRepository) post(ctx context.Context, path string
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	return sonarStatusError(path, response)
+	if err = sonarStatusError(path, response); err != nil {
+		return err
+	}
+	if out == nil {
+		return nil
+	}
+	if err = json.NewDecoder(response.Body).Decode(out); err != nil {
+		return fmt.Errorf("decoding %s response: %w", path, err)
+	}
+	return nil
 }
 
 // authorize adds the bearer token. It is skipped when no token is

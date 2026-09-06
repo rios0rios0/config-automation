@@ -244,6 +244,67 @@ func TestApplySonarPolicyCommand(t *testing.T) {
 		assert.Equal(t, []string{"hotspot-1"}, sonarRepo.ReviewedHotspotIDs)
 	})
 
+	t.Run("should report the count the server actually moved, not the count requested", func(t *testing.T) {
+		t.Parallel()
+		// given — api/issues/bulk_change answers 200 with a tally, so a
+		// denied transition arrives as "0 accepted" rather than as an error
+		// status; logging len(keys) would report a run that changed nothing
+		// as fully successful.
+		expected := errors.New("api/issues/bulk_change accepted 1 of 2 issues (1 ignored, 0 failed)")
+		project := builders.NewSonarProjectBuilder().WithName("dotfiles").Build()
+		sonarRepo := doubles.NewInMemorySonarProjectsRepository().
+			WithProject(project).
+			WithExclusions(project.Key, entities.DesiredSonarIssueExclusions()...).
+			WithOpenIssues(project.Key,
+				entities.SonarIssue{Key: "issue-1", RuleKey: firstPartyRule},
+				entities.SonarIssue{Key: "issue-2", RuleKey: firstPartyRule},
+			)
+		sonarRepo.ErrorOnAccept = expected
+		sonarRepo.AcceptedOnError = 1
+		command := commands.NewApplySonarPolicyCommand(sonarRepo)
+
+		// when
+		var changes []commands.ApplySonarPolicyChange
+		var received error
+		var accepted int
+		listeners := noopSonarListeners()
+		listeners.OnChange = func(c commands.ApplySonarPolicyChange) { changes = append(changes, c) }
+		listeners.OnSuccess = func(_, issues, _ int) { accepted = issues }
+		listeners.OnError = func(_ string, err error) { received = err }
+		command.Execute(context.TODO(), commands.ApplySonarPolicyInput{Organization: sonarOrganization}, listeners)
+
+		// then
+		require.ErrorIs(t, received, expected)
+		require.Len(t, changes, 1)
+		assert.Equal(t, 1, changes[0].Count)
+		assert.Equal(t, 1, accepted)
+	})
+
+	t.Run("should report nothing accepted when the server moved no issue", func(t *testing.T) {
+		t.Parallel()
+		// given — the permission-denied signature: 200, everything ignored.
+		project := builders.NewSonarProjectBuilder().WithName("guide").Build()
+		sonarRepo := doubles.NewInMemorySonarProjectsRepository().
+			WithProject(project).
+			WithExclusions(project.Key, entities.DesiredSonarIssueExclusions()...).
+			WithOpenIssues(project.Key, entities.SonarIssue{Key: "issue-1", RuleKey: firstPartyRule})
+		sonarRepo.ErrorOnAccept = errors.New("api/issues/bulk_change accepted 0 of 1 issues")
+		command := commands.NewApplySonarPolicyCommand(sonarRepo)
+
+		// when
+		var changes []commands.ApplySonarPolicyChange
+		var accepted int
+		listeners := noopSonarListeners()
+		listeners.OnChange = func(c commands.ApplySonarPolicyChange) { changes = append(changes, c) }
+		listeners.OnSuccess = func(_, issues, _ int) { accepted = issues }
+		listeners.OnError = func(_ string, _ error) {}
+		command.Execute(context.TODO(), commands.ApplySonarPolicyInput{Organization: sonarOrganization}, listeners)
+
+		// then
+		assert.Empty(t, changes)
+		assert.Equal(t, 0, accepted)
+	})
+
 	t.Run("should call OnError once per project when listing succeeds but a project fails", func(t *testing.T) {
 		t.Parallel()
 		// given
