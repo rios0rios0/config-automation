@@ -55,6 +55,17 @@ func DesiredWikiAllowlist() map[string]struct{} {
 // ruleset handles force-push protection separately.
 const DesiredReviewCount = 1
 
+// DesiredForkActionsEnabled is the policy for the repository-level GitHub
+// Actions switch on forks: off. A fork carries the upstream's workflows
+// verbatim, so with Actions on, someone else's automation can run under
+// this account — on its triggers, with this account's minutes and
+// tokens. Nothing here needs a fork to run workflows: the compliance
+// audit, the config-and-docs refresh, and the release reconciliation all
+// skip forks. Non-forks are not subject to the rule (their workflows are
+// our own); AuditResult.ComputeIssues() applies it and phase 3 flips the
+// switch.
+const DesiredForkActionsEnabled = false
+
 // DesiredAllowedMergeMethods is the policy for the ruleset's
 // pull_request rule: `main` accepts merge commits and nothing else.
 // This is where "no fast-forward merges" is actually enforced —

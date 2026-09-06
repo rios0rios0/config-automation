@@ -101,6 +101,60 @@ func TestAuditResultComputeIssues(t *testing.T) {
 		}
 	})
 
+	t.Run("should flag actions_enabled when a fork still runs GitHub Actions", func(t *testing.T) {
+		t.Parallel()
+		// given — a fork compliant in every other way, with the
+		// repository-level Actions switch left on.
+		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithCompliantSettings().Build()
+		audit := builders.NewAuditResultBuilder().WithRepository(forkRepo).WithActionsEnabled(true).Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Equal(t, []string{"actions_enabled=true(want false)"}, issues)
+	})
+
+	t.Run("should return no issues when a fork has GitHub Actions disabled", func(t *testing.T) {
+		t.Parallel()
+		// given
+		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithCompliantSettings().Build()
+		audit := builders.NewAuditResultBuilder().WithRepository(forkRepo).WithActionsEnabled(false).Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Empty(t, issues)
+	})
+
+	t.Run("should not check actions_enabled when the repo is not a fork", func(t *testing.T) {
+		t.Parallel()
+		// given — a repo of our own runs its workflows; Actions on is the
+		// expected state there, not drift.
+		audit := builders.NewAuditResultBuilder().WithActionsEnabled(true).Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Empty(t, issues)
+	})
+
+	t.Run("should report actions_enabled=unknown when a fork's Actions state could not be read", func(t *testing.T) {
+		t.Parallel()
+		// given — nil mirrors dependabot_alerts: an API failure is drift to
+		// look at, not compliance.
+		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithCompliantSettings().Build()
+		audit := builders.NewAuditResultBuilder().WithRepository(forkRepo).WithActionsUnknown().Build()
+
+		// when
+		issues := audit.ComputeIssues()
+
+		// then
+		assert.Equal(t, []string{"actions_enabled=unknown"}, issues)
+	})
+
 	t.Run("should flag allow_update_branch when the rebase-update button is off", func(t *testing.T) {
 		t.Parallel()
 		// given — a repo compliant in every other way, with GitHub's default

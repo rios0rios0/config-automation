@@ -30,8 +30,9 @@ func NewGoGithubSecuritySettingsRepository(client *github.Client) *GoGithubSecur
 var _ repositories.SecuritySettingsRepository = (*GoGithubSecuritySettingsRepository)(nil)
 
 // FindByRepositoryName builds the full SecuritySettings for a repo:
-// secret scanning + push protection from the detail payload, plus
-// Dependabot alerts and automated security fixes from their endpoints.
+// secret scanning + push protection from the detail payload, Dependabot
+// alerts and automated security fixes from their endpoints, and the
+// repository-level GitHub Actions switch from the permissions endpoint.
 func (r GoGithubSecuritySettingsRepository) FindByRepositoryName(
 	ctx context.Context,
 	repo entities.Repository,
@@ -64,6 +65,11 @@ func (r GoGithubSecuritySettingsRepository) FindByRepositoryName(
 		settings.DependabotUpdates = fixes
 	}
 
+	actions, actionsErr := r.findActionsEnabled(ctx, repo.Owner, repo.Name)
+	if actionsErr == nil {
+		settings.ActionsEnabled = &actions
+	}
+
 	return settings, nil
 }
 
@@ -93,6 +99,16 @@ func (r GoGithubSecuritySettingsRepository) EnableSecretScanning(ctx context.Con
 		},
 	}
 	_, _, err := r.client.Repositories.Edit(ctx, owner, name, patch)
+	return err
+}
+
+// DisableActions turns the repository-level GitHub Actions switch off.
+// Only `enabled` is sent: the same endpoint also carries the
+// allowed-actions policy, which a fork keeps untouched.
+func (r GoGithubSecuritySettingsRepository) DisableActions(ctx context.Context, owner, name string) error {
+	_, _, err := r.client.Repositories.EditActionsPermissions(ctx, owner, name, github.ActionsPermissionsRepository{
+		Enabled: new(false),
+	})
 	return err
 }
 
@@ -131,4 +147,22 @@ func (r GoGithubSecuritySettingsRepository) findAutomatedSecurityFixes(
 		return false, nil
 	}
 	return *fixes.Enabled, nil
+}
+
+// findActionsEnabled reads the repository-level GitHub Actions switch.
+// Any failure — including a payload without the field — is surfaced as
+// an error so the caller leaves ActionsEnabled nil (unknown) rather than
+// recording a state it never saw.
+func (r GoGithubSecuritySettingsRepository) findActionsEnabled(
+	ctx context.Context,
+	owner, name string,
+) (bool, error) {
+	permissions, _, err := r.client.Repositories.GetActionsPermissions(ctx, owner, name)
+	if err != nil {
+		return false, err
+	}
+	if permissions == nil || permissions.Enabled == nil {
+		return false, errors.New("actions permissions payload has no enabled field")
+	}
+	return *permissions.Enabled, nil
 }

@@ -233,9 +233,8 @@ func runPhase2(ctx context.Context, set commandSet, owners []string, repoFilter 
 }
 
 // runPhase3 mirrors runPhase4's shape but dispatches a different
-// command with a distinct listener type, so the duplication is intrinsic.
-//
-//nolint:dupl // distinct listener/input types prevent a generic extraction
+// command with a distinct listener type, so the two cannot share a
+// generic body.
 func runPhase3(ctx context.Context, set commandSet, owners []string, repoFilter string) {
 	grouped := executeAuditPerOwner(ctx, set, owners, repoFilter)
 	saveSnapshot(flattenAudits(grouped), auditBeforePath())
@@ -260,11 +259,12 @@ func runPhase3(ctx context.Context, set commandSet, owners []string, repoFilter 
 					"reason":   reason,
 				}).Info("skipped")
 			},
-			OnSuccess: func(secretScanning, dependabot int) {
+			OnSuccess: func(secretScanning, dependabot, actions int) {
 				logger.WithFields(logger.Fields{
 					fieldOwner:        group.Owner,
 					"secret_scanning": secretScanning,
 					"dependabot":      dependabot,
+					"actions":         actions,
 				}).Info("phase 3 complete")
 			},
 			OnError: func(name string, err error) {
@@ -278,9 +278,8 @@ func runPhase3(ctx context.Context, set commandSet, owners []string, repoFilter 
 }
 
 // runPhase4 mirrors runPhase3's shape but dispatches a different
-// command with a distinct listener type, so the duplication is intrinsic.
-//
-//nolint:dupl // distinct listener/input types prevent a generic extraction
+// command with a distinct listener type, so the two cannot share a
+// generic body.
 func runPhase4(ctx context.Context, set commandSet, owners []string, repoFilter string) {
 	grouped := executeAuditPerOwner(ctx, set, owners, repoFilter)
 	saveSnapshot(flattenAudits(grouped), auditBeforePath())
@@ -383,7 +382,7 @@ func runDryRun(ctx context.Context, set commandSet, owners []string, repoFilter 
 					fieldAction: change.Action,
 				}).Info("would apply")
 			},
-			OnSuccess: func(_, _ int) {},
+			OnSuccess: func(_, _, _ int) {},
 			OnError:   func(_ string, _ error) {},
 		})
 
@@ -476,7 +475,7 @@ func printAuditTable(audits []entities.AuditResult) {
 func printTableHeader() {
 	fmt.Fprintf(
 		os.Stdout,
-		"\n%-*s %-8s %-7s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-8s %-6s %-5s\n",
+		"\n%-*s %-8s %-7s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-7s %-5s %-6s %-8s %-6s %-5s\n",
 		repoColumnWidth,
 		"REPO",
 		"VIS",
@@ -489,6 +488,7 @@ func printTableHeader() {
 		"PUSH-P",
 		"DEP-AL",
 		"DEP-UP",
+		"ACTIONS",
 		"PROT",
 		"NO-FP",
 		"MERGE-M",
@@ -507,7 +507,7 @@ func printTableRows(audits []entities.AuditResult) int {
 			continue
 		}
 
-		fmt.Fprintf(os.Stdout, "%-*s %-8s %-7s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-5s %-6s %-8s %-6s %-5s\n",
+		fmt.Fprintf(os.Stdout, "%-*s %-8s %-7s %-7s %-7s %-5s %-5s %-7s %-7s %-7s %-7s %-7s %-5s %-6s %-8s %-6s %-5s\n",
 			repoColumnWidth,
 			repo.QualifiedName(),
 			repo.Visibility,
@@ -520,6 +520,7 @@ func printTableRows(audits []entities.AuditResult) int {
 			truncate(defaultIfEmpty(a.Security.PushProtection, "N/A"), secretColumnWidth),
 			yesNoTri(a.Security.DependabotAlerts),
 			yesNo(a.Security.DependabotUpdates),
+			yesNoTri(a.Security.ActionsEnabled),
 			protectionLabel(a),
 			forcePushLabel(a),
 			mergeMethodsLabel(a),

@@ -10,8 +10,9 @@ import (
 
 // ApplySecuritySettingsCommand runs phase 3: enable secret scanning,
 // push protection, Dependabot alerts, and automated security fixes on
-// every eligible repo (public, non-fork). Forks and private repos are
-// skipped per the policy carve-out.
+// every eligible repo (public, non-fork), and disable GitHub Actions on
+// every fork. Forks are exempt from the first three and private repos
+// from secret scanning, per the policy carve-outs.
 type ApplySecuritySettingsCommand struct {
 	securityRepo repositories.SecuritySettingsRepository
 }
@@ -33,7 +34,7 @@ type ApplySecuritySettingsInput struct {
 
 // ApplySecuritySettingsChange describes one security-related mutation.
 // Action is a short stable tag ("secret_scanning", "dependabot_alerts",
-// "dependabot_updates").
+// "dependabot_updates", "actions_disabled").
 type ApplySecuritySettingsChange struct {
 	RepositoryName string
 	Action         string
@@ -41,15 +42,18 @@ type ApplySecuritySettingsChange struct {
 }
 
 // ApplySecuritySettingsListeners mirrors the phase-2 listener shape.
+// OnSkip fires for a fork that needs nothing: secret scanning and
+// Dependabot are carved out there, so once Actions are off the fork has
+// no rule left to enforce.
 type ApplySecuritySettingsListeners struct {
 	OnChange  func(change ApplySecuritySettingsChange)
 	OnSkip    func(repoName, reason string)
-	OnSuccess func(secretScanningChanges, dependabotChanges int)
+	OnSuccess func(secretScanningChanges, dependabotChanges, actionsChanges int)
 	OnError   func(repoName string, err error)
 }
 
 // Execute enables the missing security features per audit, honoring
-// the fork and private-repo carve-outs.
+// the fork and private-repo carve-outs, and disables Actions on forks.
 func (c ApplySecuritySettingsCommand) Execute(
 	ctx context.Context,
 	input ApplySecuritySettingsInput,
@@ -57,15 +61,14 @@ func (c ApplySecuritySettingsCommand) Execute(
 ) {
 	secretScanningChanges := 0
 	dependabotChanges := 0
+	actionsChanges := 0
 
 	for _, audit := range input.Audits {
 		if audit.AuditError != "" {
 			continue
 		}
 		if audit.Repository.Fork {
-			if listeners.OnSkip != nil {
-				listeners.OnSkip(audit.Repository.Name, "fork")
-			}
+			actionsChanges += c.applyFork(ctx, input, audit, listeners)
 			continue
 		}
 		secret, dependabot := c.applyOne(ctx, input, audit, listeners)
@@ -73,12 +76,37 @@ func (c ApplySecuritySettingsCommand) Execute(
 		dependabotChanges += dependabot
 	}
 
-	listeners.OnSuccess(secretScanningChanges, dependabotChanges)
+	listeners.OnSuccess(secretScanningChanges, dependabotChanges, actionsChanges)
 }
 
-// applyOne runs the three security sub-applications for one audit.
-// Matching the original `continue`-on-error semantics, any sub-step
-// that errors aborts the remaining sub-steps for this repo.
+// applyFork enforces the one security rule a fork is subject to: GitHub
+// Actions must be off (entities.DesiredForkActionsEnabled). Secret
+// scanning and Dependabot are left alone, matching the carve-out in
+// AuditResult.ComputeIssues — an upstream sync wipes them, so enforcing
+// them there only churns. An unknown switch is enforced, not trusted,
+// the same way an unknown dependabot_alerts is. Returns the number of
+// Actions changes made (0 or 1).
+func (c ApplySecuritySettingsCommand) applyFork(
+	ctx context.Context,
+	input ApplySecuritySettingsInput,
+	audit entities.AuditResult,
+	listeners ApplySecuritySettingsListeners,
+) int {
+	if audit.Security.IsActionsDisabled() {
+		if listeners.OnSkip != nil {
+			listeners.OnSkip(audit.Repository.Name, "fork")
+		}
+		return 0
+	}
+	if !c.applyActionsDisabled(ctx, input, audit, listeners) {
+		return 0
+	}
+	return 1
+}
+
+// applyOne runs the three security sub-applications for one non-fork
+// audit. Matching the original `continue`-on-error semantics, any
+// sub-step that errors aborts the remaining sub-steps for this repo.
 func (c ApplySecuritySettingsCommand) applyOne(
 	ctx context.Context,
 	input ApplySecuritySettingsInput,
@@ -162,6 +190,26 @@ func (c ApplySecuritySettingsCommand) applyDependabotUpdates(
 	}
 	if err := c.securityRepo.EnableAutomatedSecurityFixes(ctx, input.Owner, audit.Repository.Name); err != nil {
 		listeners.OnError(audit.Repository.Name, fmt.Errorf("enabling automated security fixes: %w", err))
+		return false
+	}
+	change.Applied = true
+	emitSecurityChange(listeners.OnChange, change)
+	return true
+}
+
+func (c ApplySecuritySettingsCommand) applyActionsDisabled(
+	ctx context.Context,
+	input ApplySecuritySettingsInput,
+	audit entities.AuditResult,
+	listeners ApplySecuritySettingsListeners,
+) bool {
+	change := ApplySecuritySettingsChange{RepositoryName: audit.Repository.Name, Action: "actions_disabled"}
+	if input.DryRun {
+		emitSecurityChange(listeners.OnChange, change)
+		return true
+	}
+	if err := c.securityRepo.DisableActions(ctx, input.Owner, audit.Repository.Name); err != nil {
+		listeners.OnError(audit.Repository.Name, fmt.Errorf("disabling actions: %w", err))
 		return false
 	}
 	change.Applied = true
