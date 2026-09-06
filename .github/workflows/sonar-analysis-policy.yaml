@@ -37,9 +37,13 @@ jobs:
       # sub-steps independently instead of aborting the project on the first
       # denial. Without the secret the read endpoints still answer for public
       # projects, so a `dry_run` dispatch works uncredentialed and a real run
-      # fails loudly with the API's own denial message --- "Authentication is
-      # required" when the secret is missing entirely, "Insufficient privileges"
-      # when its user lacks one of the three permissions.
+      # fails loudly with the API's own denial message --- which is not the
+      # same message everywhere. Uncredentialed, `api/settings/set` answers
+      # 404 "Project doesn't exist", because SonarQube Cloud hides a project
+      # from a caller that cannot administer it, while `api/issues/bulk_change`
+      # and `api/hotspots/change_status` answer 401 "Authentication is
+      # required"; a token whose user lacks one of the three permissions gets
+      # 403 "Insufficient privileges" instead.
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       # Unlike the GitHub workflows this one does not fan out per owner:
       # `medhub-life` and `prefy` have no SonarQube Cloud organization, so a

@@ -76,8 +76,12 @@ type SonarConfig struct {
 // endpoint the adapter uses answers anonymously for public projects, so
 // `--sonar-policy --dry-run` reports what would change without a
 // credential, and only the mutations fail — with the API's own denial
-// message, "Authentication is required" when no token was sent and
-// "Insufficient privileges" when the token's user lacks the right.
+// message, which is not the same one everywhere. Uncredentialed,
+// api/settings/set answers 404 "Project doesn't exist" (SonarQube Cloud
+// hides a project from a caller that cannot administer it) while
+// api/issues/bulk_change and api/hotspots/change_status answer 401
+// "Authentication is required"; a token whose user lacks the right gets
+// 403 "Insufficient privileges" instead.
 func newSonarConfig() SonarConfig {
 	host := strings.TrimRight(os.Getenv("SONAR_HOST_URL"), "/")
 	if host == "" {

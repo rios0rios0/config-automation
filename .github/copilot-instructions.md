@@ -85,7 +85,7 @@ go run ./cmd/harden-repos --sonar-policy --dry-run                              
 | `HARDEN_OWNER`                   | Comma-separated GitHub owners/orgs to audit, in order (default: `rios0rios0`). The workflows set it to a **single** owner per matrix leg, because a fine-grained PAT is bound to one resource owner. |
 | `GH_TOKEN` / `GITHUB_TOKEN`      | Bearer token for `github.com/google/go-github`.                         |
 | `TMPDIR`                         | Honored by `os.TempDir()` for `gh_hardening_audit_before.json` output.  |
-| `SONAR_TOKEN`                    | SonarQube Cloud **user** token for `--sonar-policy` (not an analysis token). Absent, reads still answer for public projects and every mutation fails with the API's own denial (`Authentication is required` with no token, `Insufficient privileges` with an under-permissioned one). |
+| `SONAR_TOKEN`                    | SonarQube Cloud **user** token for `--sonar-policy` (not an analysis token). Absent, reads still answer for public projects and every mutation fails with the API's own denial, which differs per endpoint: uncredentialed, `api/settings/set` answers `404 Project doesn't exist` (SonarQube Cloud hides a project from a caller that cannot administer it) while `api/issues/bulk_change` and `api/hotspots/change_status` answer `401 Authentication is required`; an under-permissioned token gets `403 Insufficient privileges`. |
 | `SONAR_ORGANIZATION`             | Single SonarQube Cloud organization walked by `--sonar-policy` (default `rios0rios0`). Deliberately not `HARDEN_OWNER`: the other owners have no SonarQube Cloud organization. |
 | `SONAR_HOST_URL`                 | SonarQube Cloud base URL (default `https://sonarcloud.io`).             |
 
