@@ -627,6 +627,39 @@ jobs:
               continue
             fi
 
+            # Secret-shape guard. What this job writes is prose ABOUT secret
+            # hygiene, and gitleaks matches shapes rather than values:
+            # several rules in the GitLab-customised set the shared
+            # `sast:gitleaks` stage runs in its second pass fire on a vendor
+            # prefix or a key banner ALONE, with no body check. On 2026-08-26
+            # that turned a bullet warning against credential-shaped fixtures
+            # into a finding in ~40 repositories at once. Because the scan on
+            # `main` walks the whole history reachable from `HEAD`, rewording
+            # the sentence afterwards does not clear it --- only a
+            # `.gitleaksignore` fingerprint does, and this job is granted no
+            # tool that could write one. The prompt forbids these shapes;
+            # this refuses the diff that carries one anyway, which is the
+            # half of the pair that does not depend on the model complying.
+            #
+            # Scoped to ADDED lines (`git diff -U0` after the `add -N` above,
+            # so a brand-new file is read in full) on purpose: the fleet's
+            # older skills still carry the hyphenated wording, and failing a
+            # repo for text this run did not write would turn a documentation
+            # backlog into a permanently red leg.
+            #
+            # Every pattern is written so it cannot match itself --- each
+            # prefix is followed by a bracket expression rather than by body
+            # characters, which is exactly the property the approved wording
+            # in the prompt relies on.
+            if git -C "${target}" diff -U0 -- "${drift_paths[@]}" \
+              | grep -E '^\+' \
+              | grep -Eq 'xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]'; then
+              echo '--> the refresh added a credential-shaped literal, which the shared gitleaks stage would flag; skipping this repo.'
+              failed+=("secret-shape: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+
             # Idempotent branch: force-push updates the diff if a PR
             # already exists. Guarded like every other git/gh call in this
             # loop --- a bare command here would abort the whole batch under

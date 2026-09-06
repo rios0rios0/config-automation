@@ -45,12 +45,23 @@ Today the in-scope set is the AI-assistant guidance files only. Three files are 
 - **Keep the guide links valid.** They point at <https://github.com/rios0rios0/guide/wiki>, whose pages are flat — the page name is the source file's base name, so `Life-Cycle/Git-Flow.md` is `/wiki/Git-Flow`. Only link pages that exist, and only ones relevant to this repository's stack.
 - **Keep "what not to flag" honest.** For preserved or discontinued projects it must keep saying that modernising the code is out of scope; removing that turns every weekly review into noise.
 - Do not create this file for a repository that has no `.github/copilot-instructions.md` and no clear conventions of its own — a generic review skill is worse than none.
+- **The secret-hygiene bullet has exactly one approved wording.** If the security section warns about credential-shaped fixtures — and it should — write it as this text and nothing else. Do not paraphrase it, do not add vendors to the list, do not "complete" a prefix:
+
+  ```
+  - **Never write a PEM header sentinel or a realistic key shape into a fixture**
+    (GitHub `ghp_` prefixes, OpenAI `sk-` prefixes, AWS `AKIA` prefixes, Slack `xoxb` prefixes, JWT-shaped strings, or the dashed `BEGIN …` banners).
+    Gitleaks matches the shape, not the value, so a placeholder that merely *looks* like a
+    credential fails the pipeline. Use inert placeholders such as `fixture-token-placeholder`.
+  ```
+
+  Every prefix in it is deliberately cut short of what the scanner's rules match, and the Slack one deliberately has no hyphen — that is the whole point of the wording, so copy it verbatim rather than tidying it. **An existing bullet that quotes a shape the scanner matches is drift**, and the hyphenated Slack prefix is the one most repositories generated before 2026-09-06 carry: it is a live finding in every repository whose pipeline runs the stage, so replace that bullet with the text above even when nothing else in the file needs touching. A bullet that already avoids matchable shapes but words them differently — naming the vendors with no prefixes at all, say — is **not** drift; leave it as it is rather than opening a pull request over phrasing.
 
 ## Shared rules for what goes into any of these files
 
 - Focus on the **big picture** that takes reading multiple files to understand: architectural invariants, dependency direction, non-obvious coupling between modules.
 - Include **build / test / lint commands** that are commonly used, including how to run a single test.
 - Include **conventions specific to this repo** — things a reader would get wrong by following generic best practices.
+- **Never write a credential-shaped literal into any file you produce.** Name the vendor in words instead of spelling its prefix out, and use inert placeholders such as `fixture-token-placeholder`. Every repository in the fleet runs the shared `sast:gitleaks` stage, and several rules in the GitLab-customised rule set of its second pass match a vendor prefix or a key banner **on its own**, with no body check — so a sentence that quotes one becomes a finding itself, which is how a paragraph advising against committing secrets turned pipelines red across the fleet on 2026-08-26. On `main` that scan walks the whole history reachable from `HEAD`, so rewording the sentence later does not clear it: once the text is committed only a `.gitleaksignore` fingerprint clears it, and you are not granted the tool to write one. Concretely, never emit the hyphenated Slack bot-token prefix (`xox`, one letter, a hyphen — it matches with an empty body), a vendor prefix followed by body characters (GitHub `ghp_`, OpenAI `sk-`, AWS `AKIA`), the dashed `BEGIN …` banner of a PEM private key, or a JWT-shaped string. This is the convention recorded in `global/scripts/tools/README.md` of `rios0rios0/pipelines`, and it holds for `CLAUDE.md` and `.github/copilot-instructions.md` exactly as much as for the code-review skill.
 
 ## What NOT to include
 
