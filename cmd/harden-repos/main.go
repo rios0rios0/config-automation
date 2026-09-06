@@ -37,6 +37,13 @@ const ownerSeparator = ","
 // nothing usable.
 const defaultOwner = "rios0rios0"
 
+// sonarOrganizationEnv names the environment variable that overrides the
+// SonarQube Cloud organization the --sonar-policy mode walks. It is a
+// single organization, not a list: HARDEN_OWNER's other owners have no
+// SonarQube Cloud organization at all, so reusing it would only produce
+// "No organization for key" on every run.
+const sonarOrganizationEnv = "SONAR_ORGANIZATION"
+
 // Logrus structured-logging field keys reused across phases.
 const (
 	fieldRepo    = "repo"
@@ -44,6 +51,9 @@ const (
 	fieldApplied = "applied"
 	fieldAction  = "action"
 	fieldPhase   = "phase"
+	fieldProject = "project"
+	fieldCount   = "count"
+	fieldReason  = "reason"
 )
 
 // ownerAudits pairs an owner with the audits collected for it. Phases 2-4
@@ -62,6 +72,7 @@ func main() {
 		listJSON           bool
 		dryRun             bool
 		failOnNonCompliant bool
+		sonarPolicy        bool
 	)
 
 	flag.IntVar(
@@ -79,6 +90,12 @@ func main() {
 	)
 	flag.BoolVar(&dryRun, "dry-run", false, "run phases 1-4 without mutating anything")
 	flag.BoolVar(
+		&sonarPolicy,
+		"sonar-policy",
+		false,
+		"apply the SonarQube Cloud analysis policy to every project of $SONAR_ORGANIZATION; honors --dry-run and --repo",
+	)
+	flag.BoolVar(
 		&failOnNonCompliant,
 		"fail-on-noncompliant",
 		false,
@@ -92,6 +109,11 @@ func main() {
 	ctx := context.Background()
 
 	switch {
+	// --sonar-policy is matched before --dry-run so the two compose:
+	// --dry-run alone still means "phases 1-4, no mutations", and
+	// --sonar-policy --dry-run previews the SonarQube Cloud changes.
+	case sonarPolicy:
+		runSonarPolicy(ctx, set, repoFilter, dryRun)
 	case listJSON:
 		runListJSON(ctx, set, owners)
 	case dryRun:
@@ -107,7 +129,7 @@ func main() {
 	case phase == phaseReport:
 		runPhase5(ctx, set, owners)
 	default:
-		logger.Error("must specify --phase 1..5, --list-json, or --dry-run")
+		logger.Error("must specify --phase 1..5, --list-json, --sonar-policy, or --dry-run")
 		flag.Usage()
 		os.Exit(exitUsageError)
 	}
@@ -140,6 +162,68 @@ func parseOwners(raw string) []string {
 		return []string{defaultOwner}
 	}
 	return owners
+}
+
+// runSonarPolicy applies the SonarQube Cloud analysis policy to every
+// project of the configured organization: it adds the fleet's issue
+// exclusions and triages the findings those rules already raised.
+//
+// Unlike the GitHub phases this mode does not fan out per owner — see
+// sonarOrganizationEnv — and it reads no audit snapshot, because the
+// SonarQube Cloud project list is authoritative on its own: a renamed
+// repository keeps its original project key, so the list cannot be
+// derived from the GitHub one.
+func runSonarPolicy(ctx context.Context, set commandSet, repoFilter string, dryRun bool) {
+	organization := strings.TrimSpace(os.Getenv(sonarOrganizationEnv))
+	if organization == "" {
+		organization = entities.DesiredSonarOrganization
+	}
+
+	failed := false
+	set.ApplySonar.Execute(ctx, commands.ApplySonarPolicyInput{
+		Organization:  organization,
+		ProjectFilter: repoFilter,
+		DryRun:        dryRun,
+	}, commands.ApplySonarPolicyListeners{
+		OnChange: func(change commands.ApplySonarPolicyChange) {
+			message := "applied sonar policy"
+			if !change.Applied {
+				message = "would apply"
+			}
+			logger.WithFields(logger.Fields{
+				fieldProject: change.ProjectKey,
+				fieldRepo:    change.ProjectName,
+				fieldAction:  change.Action,
+				fieldCount:   change.Count,
+				fieldApplied: change.Applied,
+			}).Info(message)
+		},
+		OnSkip: func(projectKey, reason string) {
+			logger.WithFields(logger.Fields{
+				fieldProject: projectKey,
+				fieldReason:  reason,
+			}).Info("skipped")
+		},
+		OnSuccess: func(exclusions, issues, hotspots int) {
+			logger.WithFields(logger.Fields{
+				"organization":     organization,
+				"exclusions_added": exclusions,
+				"issues_accepted":  issues,
+				"hotspots_safe":    hotspots,
+			}).Info("sonar policy complete")
+		},
+		OnError: func(projectKey string, err error) {
+			failed = true
+			logger.WithError(err).WithField(fieldProject, projectKey).Error("sonar policy error")
+		},
+	})
+
+	// A denied mutation is silent otherwise: the run would end green
+	// having changed nothing, and the scheduled workflow would keep
+	// reporting success while every gate stayed red.
+	if failed {
+		os.Exit(1)
+	}
 }
 
 // runListJSON emits the JSON array consumed by the config-and-docs
@@ -254,9 +338,9 @@ func runPhase3(ctx context.Context, set commandSet, owners []string, repoFilter 
 			},
 			OnSkip: func(name, reason string) {
 				logger.WithFields(logger.Fields{
-					fieldOwner: group.Owner,
-					fieldRepo:  name,
-					"reason":   reason,
+					fieldOwner:  group.Owner,
+					fieldRepo:   name,
+					fieldReason: reason,
 				}).Info("skipped")
 			},
 			OnSuccess: func(secretScanning, dependabot, actions int) {
@@ -299,9 +383,9 @@ func runPhase4(ctx context.Context, set commandSet, owners []string, repoFilter 
 			},
 			OnSkip: func(name, reason string) {
 				logger.WithFields(logger.Fields{
-					fieldOwner: group.Owner,
-					fieldRepo:  name,
-					"reason":   reason,
+					fieldOwner:  group.Owner,
+					fieldRepo:   name,
+					fieldReason: reason,
 				}).Info("skipped")
 			},
 			OnSuccess: func(changed, skipped int) {

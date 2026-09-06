@@ -12,6 +12,7 @@ func RegisterProviders(container *dig.Container) error {
 		NewApplyBranchProtectionCommand,
 		NewListTargetRepositoriesCommand,
 		NewReportComplianceChangesCommand,
+		NewApplySonarPolicyCommand,
 	}
 	for _, p := range providers {
 		if err := container.Provide(p); err != nil {

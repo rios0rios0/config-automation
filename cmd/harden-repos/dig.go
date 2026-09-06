@@ -21,6 +21,7 @@ type commandSet struct {
 	ApplyProtection *commands.ApplyBranchProtectionCommand
 	ListTargets     *commands.ListTargetRepositoriesCommand
 	Report          *commands.ReportComplianceChangesCommand
+	ApplySonar      *commands.ApplySonarPolicyCommand
 }
 
 // injectCommands builds the container, registers providers, and

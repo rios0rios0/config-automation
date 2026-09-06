@@ -53,7 +53,7 @@ Test data builders live under `test/domain/builders/`; in-memory doubles live un
 
 ## Hardening Policy Changes
 
-Constants in `internal/domain/entities/compliance_policy.go` and the policy carve-outs in `AuditResult.ComputeIssues()` propagate to every `rios0rios0` repo on the next audit run. Treat policy edits carefully:
+Constants in `internal/domain/entities/compliance_policy.go` and the policy carve-outs in `AuditResult.ComputeIssues()` propagate to every `rios0rios0` repo on the next audit run, and `internal/domain/entities/sonar_analysis_policy.go` does the same to every SonarQube Cloud project (a rule added there stops being reported anywhere). Treat policy edits carefully:
 
 1. Call out the intent in the PR description.
 2. Verify via `--dry-run` that the set of repos flagged as non-compliant matches expectations.
@@ -65,4 +65,13 @@ GitHub Actions workflows can only be fully exercised by running them. For the co
 
 ```bash
 gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=<safe-repo>
+```
+
+The Sonar analysis policy has a dry run that needs no credential, so preview it before dispatching
+for real — and prefer a single project on the first pass:
+
+```bash
+go run ./cmd/harden-repos --sonar-policy --dry-run
+gh workflow run sonar-analysis-policy.yaml -R rios0rios0/config-automation -f project=<safe-repo> -f dry_run=true
+gh workflow run sonar-analysis-policy.yaml -R rios0rios0/config-automation -f project=<safe-repo>
 ```
