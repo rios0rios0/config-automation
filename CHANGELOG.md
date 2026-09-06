@@ -22,6 +22,17 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-06
+
+### Added
+
+- added a `--sonar-policy` mode and a daily `Sonar Analysis Policy` workflow that apply the fleet SonarQube Cloud analysis policy to every project of the `rios0rios0` organization: they add the `sonar.issue.ignore.multicriteria` pair for `githubactions:S7637` on `**/*.y*ml`, accept the still-open issues of that rule, and mark its `TO_REVIEW` hotspots reviewed/safe — the `uses: rios0rios0/pipelines/...@main` references are first-party and float on `@main` by design, and under SonarQube Cloud automatic analysis the exclusion cannot be committed to the analyzed repository because `.sonarcloud.properties` supports no issue-exclusion key
+- added a compliance rule requiring forks to keep GitHub Actions disabled: a fork carries the workflows of its upstream verbatim and nothing in this account needs a fork to run any, so phase 1 now reads the repository-level switch from `GET /repos/{owner}/{repo}/actions/permissions` (covered by the audit PAT via `Administration: read`), reports a fork whose switch is on as `actions_enabled=true(want false)` — or `actions_enabled=unknown` when it could not be read, mirroring `dependabot_alerts` — and phase 3 turns it off on forks only through `SecuritySettingsRepository.DisableActions`, which `--dry-run` shows as `actions_disabled`; repositories of our own are never checked, the audit table gained an `ACTIONS` column, and the phase 5 report diffs `actions_enabled`
+
+### Fixed
+
+- fixed the weekly configuration and documentation refresh going red when Claude's safeguards refuse a repository: the refusal is deterministic for that one repository and says nothing about the rest of the batch, and the leg has nothing to retry and nothing it can fix, so it is now reported on its own `safeguard_skipped` summary line and as a `::warning::` annotation instead of being counted in `failed` — the 2026-08-31 run failed on `intelligencer-door` for exactly this; every other failure kind still fails the leg
+
 ## [0.8.2] - 2026-09-02
 
 ### Changed
