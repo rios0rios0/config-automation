@@ -651,9 +651,39 @@ jobs:
             # prefix is followed by a bracket expression rather than by body
             # characters, which is exactly the property the approved wording
             # in the prompt relies on.
-            if git -C "${target}" diff -U0 -- "${drift_paths[@]}" \
+            #
+            # The plumbing below is written to fail CLOSED. A guard that
+            # quietly does not fire is worse than no guard: it restores the
+            # dependency on the model complying that this exists to remove,
+            # while reading as if it had checked. Three details carry that:
+            #   - the diff is captured before it is searched, and a failure
+            #     to read it is treated like a finding. Left inside the
+            #     pipeline, a dying `git diff` is indistinguishable from
+            #     "nothing matched", and "could not look" must never be
+            #     reported as "looked, and it was clean".
+            #   - the match stage is `grep -E ... >/dev/null`, never
+            #     `grep -Eq`. `-q` exits on the first hit and closes the
+            #     pipe; the upstream `grep` then takes SIGPIPE and exits
+            #     141, and under `pipefail` that 141 --- not the match ---
+            #     is what the `if` sees, so the guard silently does NOT
+            #     fire. It would misfire that way precisely on the case it
+            #     most needs to cover, a large added-line stream: a
+            #     brand-new file read in full, or several at once. This is
+            #     the `set +e` / `PIPESTATUS[0]` hazard around the
+            #     `claude ... | tee` pipeline above, in the other direction.
+            #   - the `+++ b/<path>` file headers are dropped explicitly
+            #     rather than by matching `^\+[^+]`, which would also drop
+            #     an added line whose own first character is a `+`.
+            if ! refresh_diff="$(git -C "${target}" diff -U0 -- "${drift_paths[@]}")"; then
+              echo '--> could not read the refresh diff to check it for credential-shaped literals; skipping this repo.'
+              failed+=("secret-shape: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+            if printf '%s\n' "${refresh_diff}" \
               | grep -E '^\+' \
-              | grep -Eq 'xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]'; then
+              | grep -Ev '^\+\+\+ ' \
+              | grep -E 'xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]' >/dev/null; then
               echo '--> the refresh added a credential-shaped literal, which the shared gitleaks stage would flag; skipping this repo.'
               failed+=("secret-shape: ${target_repo}")
               rm -rf "${target}"
