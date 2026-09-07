@@ -235,6 +235,31 @@ jobs:
       - name: 'Install Claude Code CLI'
         run: 'npm install -g @anthropic-ai/claude-code'
 
+      # `chlog new` is the only way a changelog fragment gets written in a
+      # chlog repository: the prompt is forbidden from typing one and the
+      # allowlist below grants nothing that could. A hand-typed fragment
+      # carries an invented timestamp --- the 2026-09-07 review pass found 47
+      # of them on `main` across 35 repositories, with round nanoseconds, a
+      # `time` hours away from its own filename, siblings one nanosecond
+      # apart, and dates a week in the future --- and `chlog batch` orders a
+      # release section by `time`, so an invented value reorders the
+      # changelog. The binary is a pinned release, verified against the
+      # checksum the release publishes, so every leg runs the same version.
+      - name: 'Install chlog'
+        env:
+          CHLOG_VERSION: '0.4.0'
+          CHLOG_SHA256: 'c3f825869482b397455b0ae5016d17397f900ccfa61adba038a45bea6600c329'
+        run: |
+          set -euo pipefail
+          archive="chlog-${CHLOG_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/luizjhonata/chlog/releases/download/v${CHLOG_VERSION}/${archive}"
+          echo "${CHLOG_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/chlog-bin"
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/chlog-bin" chlog
+          echo "${RUNNER_TEMP}/chlog-bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/chlog-bin/chlog" --version
+
       # Tool allowlist locked down to exactly what the refresh prompt
       # needs: read the repo, edit/create the three guidance files
       # (`CLAUDE.md`, `.github/copilot-instructions.md`, and the Copilot
@@ -253,6 +278,14 @@ jobs:
       # covers every file-editing tool, including `Write`, while a `Write`
       # rule is inert and only earns a warning on stderr. Creating a file
       # the repo did not have is therefore already covered.
+      #
+      # The one grant that is not an `Edit(...)` rule is `Bash(chlog new:*)`,
+      # handed to chlog repositories in place of any write access to
+      # `.changes/unreleased/`. A fragment is then something `chlog new`
+      # produces rather than something the model types: the tool stamps `time`
+      # and names the file from two clock reads microseconds apart, so the
+      # two always agree to the second, which is exactly what the
+      # post-refresh fragment check in the loop verifies.
       - name: 'Process batch ${{ matrix.batch.name }}'
         env:
           # Every batch is single-owner (the discover job chunks within each owner), so
@@ -448,10 +481,16 @@ jobs:
             # repository uses chlog. A config file is optional --- chlog falls
             # back to its built-in defaults --- which is why the fragment
             # directory alone counts.
+            #
+            # In chlog mode the granted tool is the `chlog new` command itself,
+            # not write access to the fragment directory: the fragment's
+            # filename and `time` then come from the tool's clock, never from
+            # the model, which is what the fragment check after the run
+            # verifies.
             if [ -f "${target}/.chlog.yaml" ] || [ -f "${target}/.chlog.yml" ] || [ -d "${target}/.changes/unreleased" ]; then
               changelog_mode='chlog'
-              changelog_tools=',Edit(/.changes/unreleased/**)'
-              changelog_note='This repository uses chlog. `CHANGELOG.md` is generated from the fragments under `.changes/unreleased/` and you have not been granted any tool that can edit it. Record the refresh as a new fragment, exactly as described under "If the repository uses chlog".'
+              changelog_tools=',Bash(chlog new:*)'
+              changelog_note='This repository uses chlog. `CHANGELOG.md` is generated from the fragments under `.changes/unreleased/`, and you have been granted no tool that can edit it or write into that directory by hand. Record the refresh by running `chlog new` from the repository root, exactly as described under "If the repository uses chlog".'
             elif [ -f "${target}/CHANGELOG.md" ]; then
               changelog_mode='changelog'
               changelog_tools=',Edit(/CHANGELOG.md)'
@@ -572,21 +611,60 @@ jobs:
               # release, which is both far away from here and hard to trace
               # back. Rejecting the repo now keeps the malformed file out of
               # the PR and turns the leg red so it is noticed this week.
+              #
+              # The second half of the check is provenance. `chlog new` stamps
+              # `time` from one `time.Now()` and names the file from a second
+              # `time.Now().UnixNano()` a few dozen microseconds later, so the
+              # two agree to the second on every fragment the tool wrote and
+              # on none typed by hand. The
+              # allowlist no longer hands out any way to write into
+              # `.changes/unreleased/`, so this should never fire; it is the
+              # half of the pair that does not depend on the CLI honouring
+              # the grant. Only whole seconds are compared, with a 2-second
+              # tolerance for the two reads straddling a second boundary, and a
+              # `time` in the future is rejected outright because
+              # `chlog batch` orders the release section by it.
+              #
+              # Every command substitution in the loop is guarded with `||`:
+              # under `set -e` a failing substitution inside an assignment
+              # aborts the whole leg, and `grep` exits 1 on no match.
               fragment_bad=''
+              fragment_reason=''
+              now_epoch=$(date -u +%s)
               while IFS= read -r fragment; do
                 case "${fragment}" in
                   *.yaml) ;;
-                  *) fragment_bad="${fragment}"; break ;;
+                  *) fragment_bad="${fragment}"; fragment_reason='not a .yaml file'; break ;;
                 esac
                 if ! grep -q '^kind: .' "${target}/${fragment}" \
                   || ! grep -q '^body: .' "${target}/${fragment}" \
                   || ! grep -q '^time: .' "${target}/${fragment}"; then
                   fragment_bad="${fragment}"
+                  fragment_reason='missing a kind:, body: or time: line'
                   break
+                fi
+                fragment_name="${fragment##*/}"
+                name_nanos="${fragment_name%%-*}"
+                case "${name_nanos}" in
+                  [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+                  *) fragment_bad="${fragment}"; fragment_reason='the filename is not the nanosecond prefix chlog new writes'; break ;;
+                esac
+                name_epoch=$((name_nanos / 1000000000))
+                # `time` is RFC 3339 with nanoseconds; `date` only needs the whole seconds.
+                time_value=$(grep -m1 '^time: ' "${target}/${fragment}" \
+                  | sed -E "s/^time: '?([^']*)'?.*$/\1/; s/\.[0-9]+Z$/Z/") || time_value=''
+                if ! time_epoch=$(date -u -d "${time_value}" +%s 2>/dev/null); then
+                  fragment_bad="${fragment}"; fragment_reason="time '${time_value}' does not parse"; break
+                fi
+                if [ $((name_epoch - time_epoch)) -gt 2 ] || [ $((time_epoch - name_epoch)) -gt 2 ]; then
+                  fragment_bad="${fragment}"; fragment_reason='filename and time disagree, so chlog new did not write it'; break
+                fi
+                if [ "${time_epoch}" -gt $((now_epoch + 60)) ]; then
+                  fragment_bad="${fragment}"; fragment_reason='time is in the future'; break
                 fi
               done < <(git -C "${target}" ls-files --others --exclude-standard -- .changes/unreleased)
               if [ -n "${fragment_bad}" ]; then
-                echo "--> malformed chlog fragment '${fragment_bad}'; skipping this repo."
+                echo "--> rejected chlog fragment '${fragment_bad}' (${fragment_reason}); skipping this repo."
                 failed+=("fragment: ${target_repo}")
                 rm -rf "${target}"
                 continue
