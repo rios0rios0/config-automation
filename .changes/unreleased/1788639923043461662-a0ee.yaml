@@ -1,3 +1,0 @@
-kind: 'Fixed'
-body: 'fixed the weekly configuration and documentation refresh going red when Claude''s safeguards refuse a repository: the refusal is deterministic for that one repository and says nothing about the rest of the batch, and the leg has nothing to retry and nothing it can fix, so it is now reported on its own `safeguard_skipped` summary line and as a `::warning::` annotation instead of being counted in `failed` — the 2026-08-31 run failed on `intelligencer-door` for exactly this; every other failure kind still fails the leg'
-time: '2026-09-05T20:25:23.043390776Z'

@@ -1,3 +1,0 @@
-kind: 'Added'
-body: 'added a `--sonar-policy` mode and a daily `Sonar Analysis Policy` workflow that apply the fleet SonarQube Cloud analysis policy to every project of the `rios0rios0` organization: they add the `sonar.issue.ignore.multicriteria` pair for `githubactions:S7637` on `**/*.y*ml`, accept the still-open issues of that rule, and mark its `TO_REVIEW` hotspots reviewed/safe — the `uses: rios0rios0/pipelines/...@main` references are first-party and float on `@main` by design, and under SonarQube Cloud automatic analysis the exclusion cannot be committed to the analyzed repository because `.sonarcloud.properties` supports no issue-exclusion key'
-time: '2026-09-06T03:08:46.606789877Z'
