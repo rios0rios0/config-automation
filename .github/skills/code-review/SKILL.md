@@ -82,9 +82,10 @@ them before the generic ones.
 - **Phase 4 creates a ruleset only when the audit found none, and updates a drifted one by ID.** GitHub rejects a POST whose name is taken with `422 Name must be unique`, so reverting `applyRuleset` to a bare `CreateRuleset` breaks every already-hardened repo — a Critical finding.
 - **`SecuritySettingsRepository.FindByRepositoryName` returns `DependabotAlerts *bool`** where `nil` means "unknown / API failure" and pointer-to-false means "disabled"; `ActionsEnabled *bool` (the repository-level GitHub Actions switch) carries the same tri-state. Collapsing the two turns an outage into a false compliance report.
 - **Phases 2/3/4 re-read the phase-1 audit, never the live API.** A per-repo round-trip added to an apply phase is a Critical finding.
+- **The Sonar analysis policy is scoped by rule key, never by file.** `entities.DesiredSonarIssueExclusions()` excludes `githubactions:S7637` on `**/*.y*ml`; `entities.DesiredSonarTriagedRuleKeys()` is *derived* from that list, not written out by hand; `MergeSonarIssueExclusions` writes the union with the project's existing exclusions because `api/settings/set` replaces a property set wholesale; and the three sub-steps run independently behind the three separate `Administer` / `Administer Issues` / `Administer Security Hotspots` permissions. Widening the exclusion from a rule key to a `sonar.exclusions` file pattern silences real findings (`S7634`, `S7630`) and is a defect. A `--sonar-policy` change propagates to every project of the `rios0rios0` SonarQube Cloud organization on the next daily run.
 - **Repositories are identified by `owner/name`** via `entities.Repository.QualifiedName()` — bare names collide across owners.
 - **A fine-grained PAT is bound to one resource owner**, so every workflow fans out with `strategy.matrix.owner` and passes one owner plus that owner's token. A change that sends several owners to one leg will fail with a confusing 404.
-- **Every step-level `actions/*` use is pinned to a full commit SHA** with a trailing `# vX.Y.Z` comment — a security decision from `0.3.8`. Reverting a SHA to a bare tag is a Critical finding, and a bump must land across all three scheduled workflows in one commit.
+- **Every step-level `actions/*` use is pinned to a full commit SHA** with a trailing `# vX.Y.Z` comment — a security decision from `0.3.8`. Reverting a SHA to a bare tag is a Critical finding, and a bump must land across all four scheduled workflows (`repo-compliance-audit.yaml`, `config-and-docs-refresh.yaml`, `release-reconcile.yaml`, `sonar-analysis-policy.yaml`) in one commit.
 - **`actions/setup-go` uses `go-version-file: 'go.mod'`**, never a hardcoded version — `setup-go` exports `GOTOOLCHAIN=local`, so a loose spec hard-fails every `go run` once `go.mod` needs a newer patch.
 - **The `</dev/null` on the `claude -p` invocation is load-bearing** — without it `claude` inherits the loop's stdin from `jq` and drains the whole batch after the first repository.
 - A policy change must arrive with updated tests under `internal/domain/entities/` and `internal/domain/commands/`, a `--dry-run` result that matches expectations, and synchronised `CLAUDE.md`, `README.md`, and `.github/copilot-instructions.md`.
@@ -95,6 +96,7 @@ them before the generic ones.
 make build && make lint && make test && make sast
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 1
+go run ./cmd/harden-repos --sonar-policy --dry-run   # preview the SonarQube Cloud analysis policy; needs no credential
 go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
 ```
 

@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'refreshed `.github/skills/code-review/SKILL.md` to say a SHA bump lands across all four scheduled workflows, add the Sonar analysis policy invariant to the review checklist, and quote the `--sonar-policy --dry-run` command'
+time: '2026-09-07T12:00:00.000000000Z'
