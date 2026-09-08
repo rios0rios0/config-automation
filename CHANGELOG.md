@@ -22,6 +22,17 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-08
+
+### Changed
+
+- re-wrapped the approved secret-hygiene wording of the refresh prompt (and this repository's own `code-review` skill) to the files' ~90-column width without changing a word, told the refresh to re-wrap an older single-line copy only when it edits the file anyway, and taught it that the `chlog ai setup` block in `CLAUDE.md` and `.github/copilot-instructions.md` is generated and must show both `chlog new` examples as `--body '<past-tense description>'` plus the line that writes an apostrophe inside the single-quoted body as `'\''` — past tense because that is the changelog convention, single quotes because a body carries backticks that a double-quoted shell argument would command-substitute — replacing the `<imperative description>` placeholder; every other `chlog new` example in the maintained files uses the same single quotes
+- refreshed `.github/skills/code-review/SKILL.md` to say a SHA bump lands across all four scheduled workflows, add the Sonar analysis policy invariant to the review checklist, and quote the `--sonar-policy --dry-run` command
+
+### Fixed
+
+- stopped the weekly refresh from typing changelog fragments by hand: a chlog repository now grants the `claude` invocation `Bash(chlog new:*)` instead of write access to `.changes/unreleased/`, the leg installs a pinned, checksum-verified `chlog` release, the prompt tells Claude to run `chlog new`, and the post-refresh guard rejects a fragment whose nanosecond filename and `time` disagree or whose `time` is in the future — the 2026-09-07 review pass found 47 hand-written fragments on `main` across 35 repositories, with round nanoseconds, future dates and siblings one nanosecond apart, which `chlog batch` would have ordered wrongly
+
 ## [0.9.0] - 2026-09-07
 
 ### Added

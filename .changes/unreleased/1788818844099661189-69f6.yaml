@@ -1,3 +1,0 @@
-kind: 'Fixed'
-body: 'stopped the weekly refresh from typing changelog fragments by hand: a chlog repository now grants the `claude` invocation `Bash(chlog new:*)` instead of write access to `.changes/unreleased/`, the leg installs a pinned, checksum-verified `chlog` release, the prompt tells Claude to run `chlog new`, and the post-refresh guard rejects a fragment whose nanosecond filename and `time` disagree or whose `time` is in the future — the 2026-09-07 review pass found 47 hand-written fragments on `main` across 35 repositories, with round nanoseconds, future dates and siblings one nanosecond apart, which `chlog batch` would have ordered wrongly'
-time: '2026-09-07T22:07:24.099571189Z'
