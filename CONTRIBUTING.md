@@ -33,7 +33,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    ```
 6. Add a changelog fragment — never edit `CHANGELOG.md`, which is generated from them:
    ```bash
-   chlog new --kind Added --body "added the thing that was not there before"
+   chlog new --kind Added --body 'added the thing that was not there before'
    ```
    Write it in the same commit that introduces the change.
 7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `CLAUDE.md` and `README.md` to match.
