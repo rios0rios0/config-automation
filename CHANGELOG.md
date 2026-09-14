@@ -22,6 +22,12 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-14
+
+### Changed
+
+- refreshed `.github/copilot-instructions.md` to document the weekly refresh workflow's `stale_after_days` activity gate, the `unchanged` skip and batch-summary footer, and the added `stale_after_days` `workflow_dispatch` input
+
 ## [0.9.2] - 2026-09-09
 
 ### Changed
