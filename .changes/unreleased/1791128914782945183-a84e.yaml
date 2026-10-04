@@ -1,0 +1,3 @@
+kind: 'Added'
+body: 'expanded scheduled refreshes to existing nested agent instructions, scoped rules, skills and references, agents, custom commands, README, and CONTRIBUTING through a shared file manifest'
+time: '2026-10-04T15:48:34.782821433Z'

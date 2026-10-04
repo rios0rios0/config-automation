@@ -26,6 +26,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    make lint
    make test
    make sast
+   python3 -m unittest discover -s test/scripts -v
    ```
 5. If your change touches `cmd/harden-repos/`, also run a single-repo audit against a safe target:
    ```bash
@@ -60,6 +61,23 @@ Constants in `internal/domain/entities/compliance_policy.go` and the policy carv
 3. After merge, manually apply phases 2-4 to surface unintended non-compliance early.
 
 ## Testing Workflow Changes
+
+The refresh scope is defined by `scripts/refresh_scope.py`. Its per-repository
+manifest drives exact edit grants, the prompt inventory, drift detection, staging,
+and the activity gate. Extend discovery and its tests together when adding a file
+category, and update `scripts/refresh_config_and_docs_prompt.md` with the relevant
+editing rules. Preserve frontmatter, model/tool configuration, and generated content.
+
+Run the offline tests before a workflow change:
+
+```bash
+python3 -m unittest discover -s test/scripts -v
+```
+
+These tests execute the batch shell against local Git repositories with Claude
+and GitHub CLI doubles. They cover every supported category reaching a single PR,
+no-op runs, tracked deletions, failures that must not abort the batch, and the
+activity gate excluding refresh output without skipping initial guidance.
 
 GitHub Actions workflows can only be fully exercised by running them. For the config-and-docs refresh, trigger a single-repo dispatch against a low-risk target after merge:
 

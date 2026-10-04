@@ -15,7 +15,7 @@ The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-s
 ## Features
 
 - **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags, and GitHub Actions disabled on forks).
-- **Config and docs refresh** — weekly matrix job that runs Claude Code against every non-fork non-archived repo, updates the in-scope configuration and documentation files only when they've drifted, records the change in `CHANGELOG.md`, and opens a single PR per repo. Today the in-scope set is `CLAUDE.md`, `.github/copilot-instructions.md`, and the repository's tailored GitHub Copilot code-review skill at `.github/skills/code-review/SKILL.md`; the workflow is intentionally named for the broader scope so future targets (diagrams, additional config files) can be added without renaming.
+- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork non-archived repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. The refresh covers existing assistant instructions, skills and references, agents, custom commands, README, and CONTRIBUTING; exact paths are discovered separately for each repository.
 - **Sonar analysis policy** — daily job that applies the fleet's SonarQube Cloud analysis policy to every project of the `rios0rios0` organization: it adds the `sonar.issue.ignore.multicriteria` pairs the fleet needs and triages the findings those rules already raised. Today the policy silences `githubactions:S7637` ("use a full commit SHA") on YAML, because every repository calls the shared CI as `uses: rios0rios0/pipelines/.github/workflows/<name>.yaml@main` and that floating reference is deliberate.
 - **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the same per-owner refresh PATs — no new secret required.
 
@@ -76,6 +76,59 @@ organization.
 
 To cover another owner, add a `strategy.matrix.owner` entry to each per-owner workflow (plus the matching
 `OWNERS` entry and `TOKEN_*` line in `config-and-docs-refresh.yaml`) and create its secret.
+
+## Prompt audit and model selection
+
+The config/docs job first runs `/checkup prompt-audit .` with read-only tools over
+repository instruction files, skills, agents, and custom commands. It logs the
+report and proposed diff, then passes them to the refresh phase to verify and fix
+findings within the discovered file manifest. README and CONTRIBUTING also receive
+a factual review against the source, build files, and workflows. Findings elsewhere and
+ambiguous conflicts remain for human review. An unsuccessful or empty audit stops
+that repository's refresh and is handled by the existing batch failure logic.
+
+The supported files are:
+
+| Category | Existing paths included |
+|---|---|
+| Shared and Claude instructions | Root and nested `AGENTS.md` and `CLAUDE.md`, including `.claude/CLAUDE.md` |
+| Scoped rules | `.claude/rules/**/*.md`, `.github/instructions/**/*.instructions.md`, `.github/copilot-instructions.md` |
+| Skills and references | Markdown under `.claude/skills/` and `.github/skills/` |
+| Agent definitions | Markdown under `.claude/agents/` and `.github/agents/` |
+| Custom commands and prompts | `.claude/commands/**/*.md`, `.github/prompts/**/*.prompt.md` |
+| Project and contributor documentation | Root `README.md`; `CONTRIBUTING.md` at the root, `.github/`, or `docs/` |
+
+`scripts/refresh_scope.py` discovers tracked files before either phase. Its manifest
+supplies the edit permissions, prompt inventory, drift detection, staging, and
+activity exclusions, so a change to any supported file can reach the same PR.
+Creation remains limited to the original optional `CLAUDE.md`,
+`.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md` targets.
+The job excludes symlinks and dependency/build/generated directories, and reports
+filenames containing control characters or permission-pattern delimiters as skipped.
+Skill/agent metadata, permissions, model pins, generated content, and deliberate
+scope overrides remain intact; ambiguous changes stay in the report.
+
+[Anthropic's command reference](https://code.claude.com/docs/en/commands) documents
+`/checkup prompt-audit` and `/doctor prompt-audit` from Claude Code v2.1.283;
+`/claude-api prompt-audit` is also available. These are session commands, distinct
+from the terminal's `claude doctor` installation check.
+[Print mode supports skill invocations](https://code.claude.com/docs/en/headless).
+The workflow installs Claude Code from the `>=2.1.283` npm range.
+
+Both phases use the `CLAUDE_MODEL` GitHub Actions repository variable, falling back
+to [`claude-opus-5-5`](https://platform.claude.com/docs/en/models/opus-5-5/overview).
+Set it with:
+
+```bash
+gh variable set CLAUDE_MODEL -R rios0rios0/config-automation --body 'claude-opus-5-5'
+```
+
+A README alone does not count as existing assistant guidance, so it cannot suppress
+a repository's initial guidance refresh.
+
+`max_turns` applies separately to each phase (default 50 each). The existing
+activity gate still skips quiet repositories; a single-repository dispatch bypasses
+it, or use `-f stale_after_days=0` for a full-fleet audit after a model or prompt change.
 
 ## Usage
 
@@ -151,6 +204,8 @@ config-automation/
 │       └── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
 ├── .github/workflows/              # four scheduled workflows that run this CLI
 └── scripts/
+    ├── refresh_scope.py                   # shared per-repository file manifest
+    ├── audit-and-refresh.sh               # read-only prompt audit followed by scoped edits
     └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
 
@@ -215,6 +270,7 @@ make build           # compile bin/harden-repos
 make test            # run unit tests (// given / // when / // then BDD style)
 make lint            # golangci-lint
 make sast            # full SAST suite via rios0rios0/pipelines
+python3 -m unittest discover -s test/scripts -v  # audit/refresh orchestration
 make run ARGS='--phase 1 --repo autobump'
 ```
 
