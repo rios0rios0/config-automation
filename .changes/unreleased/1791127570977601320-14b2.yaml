@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'selected Claude Opus 5.5 for both refresh phases through the `CLAUDE_MODEL` repository variable'
+time: '2026-10-04T15:26:10.977554758Z'
