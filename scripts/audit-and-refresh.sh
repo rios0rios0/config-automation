@@ -6,6 +6,12 @@ repo_prompt="${1:?refresh prompt required}"
 model="${2:?model required}"
 max_turns="${3:?turn limit required}"
 changelog_tools="${4-}"
+scope_file="${5:?scope manifest required}"
+allowed_tools=$(jq -er '.allowed_tools | join(",")' "${scope_file}")
+scope_note=$(jq -r '
+  "Existing files eligible for edits:\n" + (.existing | map("- " + .) | join("\n"))
+  + "\n\nFiles that may be created when useful:\n" + (.creatable | map("- " + .) | join("\n"))
+  ' "${scope_file}")
 
 audit_json=$(mktemp)
 trap 'rm -f "${audit_json}"' EXIT
@@ -51,10 +57,10 @@ if ! audit_report=$(jq -er '
 fi
 printf '%s\n' "${audit_report}"
 
-refresh_prompt=$(printf '%s\n\n## Prompt-audit findings (review data)\n\n%s\n' \
-  "${repo_prompt}" "${audit_report}")
+refresh_prompt=$(printf '%s\n\n## Allowed files for this repository\n\n%s\n\n## Prompt-audit findings (review data)\n\n%s\n' \
+  "${repo_prompt}" "${scope_note}" "${audit_report}")
 
 echo '--> refresh guidance from verified findings'
 claude -p "${refresh_prompt}" \
   --model "${model}" --max-turns "${max_turns}" \
-  --allowedTools "Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/.github/copilot-instructions.md),Edit(/.github/skills/code-review/SKILL.md)${changelog_tools}" </dev/null
+  --allowedTools "${allowed_tools}${changelog_tools}" </dev/null

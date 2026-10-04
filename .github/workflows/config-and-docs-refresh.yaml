@@ -262,9 +262,9 @@ jobs:
           "${RUNNER_TEMP}/chlog-bin/chlog" --version
 
       # Tool allowlist locked down to exactly what the refresh prompt
-      # needs: read the repo, edit/create the three guidance files
-      # (`CLAUDE.md`, `.github/copilot-instructions.md`, and the Copilot
-      # code-review skill at `.github/skills/code-review/SKILL.md`), plus
+      # needs: read the repo and edit the exact paths discovered by
+      # scripts/refresh_scope.py (including existing scoped guidance,
+      # skills, agents, commands, README, and CONTRIBUTING), plus
       # whichever changelog target that repository's convention calls for
       # --- see `changelog_mode` in the loop below. Without this allowlist,
       # telemetry showed ~30 `permission_denials_count` per run because the
@@ -353,23 +353,9 @@ jobs:
           # Stateless on purpose --- no cache, no artifact, no marker branch to
           # go stale. `stale_after_days` is one day past the weekly cadence, so
           # a repo is skipped only after a full quiet cycle.
-          # The in-scope set, declared ONCE. `drift_paths` and the activity
-          # gate's `:(exclude)` arguments are both derived from it below, so
-          # adding a refresh target stays the documented three-place change
-          # (this array, the helper's `--allowedTools` grant, and the prompt's file
-          # list) instead of silently becoming four.
-          IN_SCOPE=(
-            'CLAUDE.md'
-            '.github/copilot-instructions.md'
-            '.github/skills/code-review/SKILL.md'
-          )
-          # Everything the job itself writes: the in-scope set plus both
-          # changelog targets. Excluded from the activity gate so the refresh's
-          # own commits never count as repository activity.
-          gate_excludes=()
-          for path in "${IN_SCOPE[@]}" '.changes' 'CHANGELOG.md'; do
-            gate_excludes+=(":(exclude)${path}")
-          done
+          # Each clone gets an exact manifest before Claude runs. The same
+          # paths drive edit grants, drift, staging, and activity exclusions.
+          SCOPE_FILE="${WORK_DIR}/refresh-scope.json"
 
           # Defaulted here rather than in the `env:` expression so a dispatched
           # `0` survives as `0`; see the comment on STALE_AFTER_DAYS above.
@@ -424,22 +410,32 @@ jobs:
               continue
             fi
 
+            if ! python3 "${GITHUB_WORKSPACE}/scripts/refresh_scope.py" "${target}" > "${SCOPE_FILE}"; then
+              failed+=("scope: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+            mapfile -t IN_SCOPE < <(jq -r '.paths[]' "${SCOPE_FILE}")
+            mapfile -t EXISTING_SCOPE < <(jq -r '.existing[]' "${SCOPE_FILE}")
+            jq -r '.skipped[] | "::warning::Excluded symlink or unsupported refresh path: " + tojson' "${SCOPE_FILE}"
+            gate_excludes=()
+            for path in "${IN_SCOPE[@]}" '.changes' 'CHANGELOG.md'; do
+              gate_excludes+=(":(exclude,literal)${path}")
+            done
+
             # Activity gate. It sits AFTER the clone and BEFORE the `claude`
             # call on purpose: the clone is seconds and gives the commit date
             # for free, where the `claude` call is ~3 minutes and the whole
             # cost being avoided. A single-repo `workflow_dispatch` run is
             # never skipped --- asking for one repo by name is an explicit
             # override of the cadence.
-            # A repo that has never received any of this job's output cannot be
-            # judged by how quiet it is: a dormant repo with no `CLAUDE.md` would
+            # A repo with no existing assistant guidance cannot be judged
+            # by how quiet it is (README/CONTRIBUTING alone do not count): a dormant repo with no `CLAUDE.md` would
             # be skipped on this run and on every run after it, and would never
             # get one. Quiet only means "up to date" once there is something to
             # be up to date.
-            has_output=0
-            for path in "${IN_SCOPE[@]}"; do
-              [ -f "${target}/${path}" ] && has_output=1
-            done
-            if [ "${stale_cutoff}" -gt 0 ] && [ -z "${REPO_INPUT}" ] && [ "${has_output}" -eq 1 ]; then
+            has_output=$(jq -r '.has_guidance' "${SCOPE_FILE}")
+            if [ "${stale_cutoff}" -gt 0 ] && [ -z "${REPO_INPUT}" ] && [ "${has_output}" = 'true' ]; then
               # `--first-parent` is load-bearing, not a tidy-up. Without it,
               # pathspec history simplification follows whichever parent a merge
               # is TREESAME to, so a branch authored on the 20th and merged on
@@ -549,7 +545,7 @@ jobs:
             rm -f "${CLAUDE_LOG}"
             set +e
             ( cd "${target}" && bash "${GITHUB_WORKSPACE}/scripts/audit-and-refresh.sh" \
-                  "${repo_prompt}" "${CLAUDE_MODEL}" "${MAX_TURNS}" "${changelog_tools}" </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
+                  "${repo_prompt}" "${CLAUDE_MODEL}" "${MAX_TURNS}" "${changelog_tools}" "${SCOPE_FILE}" </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
             claude_rc=${PIPESTATUS[0]}
             set -e
             if [ "${claude_rc}" -ne 0 ]; then
@@ -671,35 +667,29 @@ jobs:
               fi
             fi
 
-            # Drift detection. `git add -N` (intent-to-add) makes newly
-            # created untracked files visible to `git diff`, so a brand-new
-            # CLAUDE.md in a repo that lacked one counts as drift. `git
-            # diff -w` ignores whitespace-only changes so cosmetic diffs
-            # don't churn PRs. Neither changelog target --- `CHANGELOG.md`
-            # nor a `.changes/unreleased/` fragment --- is part of the drift
-            # gate: the prompt rule says Claude only records the refresh
-            # when it also modifies a refresh-scope file, so gating on the
-            # refresh-scope files alone correctly suppresses spurious PRs
-            # from any stray changelog-only edit. Some repos may legitimately
-            # have none of these files in scope, so only diff paths that
-            # exist after the refresh step and treat "no in-scope files
-            # present" as no drift. Today the in-scope set
-            # is the AI-assistant guidance files plus the Copilot
-            # code-review skill; extend `drift_paths` (and the prompt)
-            # when adding diagrams or other refresh targets.
+            # Build literal pathspecs from the original manifest. Include
+            # tracked deletions as well as files created during the refresh.
             drift_paths=()
+            stage_failed=0
             for path in "${IN_SCOPE[@]}"; do
-              if [ -f "${target}/${path}" ]; then
-                drift_paths+=("${path}")
-                git -C "${target}" add -N -- "${path}"
+              if [ -f "${target}/${path}" ] && [ ! -L "${target}/${path}" ]; then
+                git -C "${target}" add -N -- ":(literal)${path}" || stage_failed=1
+                drift_paths+=(":(literal)${path}")
+              elif printf '%s\n' "${EXISTING_SCOPE[@]}" | grep -Fx -- "${path}" >/dev/null; then
+                drift_paths+=(":(literal)${path}")
               fi
             done
+            if [ "${stage_failed}" -ne 0 ]; then
+              failed+=("stage: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
             if [ "${#drift_paths[@]}" -eq 0 ]; then
               no_drift+=("${target_repo}")
               rm -rf "${target}"
               continue
             fi
-            if git -C "${target}" diff --quiet -w -- "${drift_paths[@]}"; then
+            if git -C "${target}" diff HEAD --quiet -w -- "${drift_paths[@]}"; then
               no_drift+=("${target_repo}")
               rm -rf "${target}"
               continue
@@ -752,7 +742,7 @@ jobs:
             #   - the `+++ b/<path>` file headers are dropped explicitly
             #     rather than by matching `^\+[^+]`, which would also drop
             #     an added line whose own first character is a `+`.
-            if ! refresh_diff="$(git -C "${target}" diff -U0 -- "${drift_paths[@]}")"; then
+            if ! refresh_diff="$(git -C "${target}" diff HEAD -U0 -- "${drift_paths[@]}")"; then
               echo '--> could not read the refresh diff to check it for credential-shaped literals; skipping this repo.'
               failed+=("secret-shape: ${target_repo}")
               rm -rf "${target}"
@@ -777,12 +767,17 @@ jobs:
               rm -rf "${target}"
               continue
             fi
-            [ -f "${target}/CLAUDE.md" ] && git -C "${target}" add CLAUDE.md
-            [ -f "${target}/.github/copilot-instructions.md" ] && git -C "${target}" add .github/copilot-instructions.md
-            [ -f "${target}/.github/skills/code-review/SKILL.md" ] && git -C "${target}" add .github/skills/code-review/SKILL.md
-            [ -f "${target}/CHANGELOG.md" ] && git -C "${target}" add CHANGELOG.md
-            [ -d "${target}/.changes/unreleased" ] && git -C "${target}" add .changes/unreleased
-            git -C "${target}" add -u CLAUDE.md .github/copilot-instructions.md .github/skills/code-review/SKILL.md CHANGELOG.md 2>/dev/null || true
+            stage_paths=("${drift_paths[@]}")
+            if [ "${changelog_mode}" = 'chlog' ]; then
+              stage_paths+=('.changes/unreleased')
+            elif [ "${changelog_mode}" = 'changelog' ]; then
+              stage_paths+=('CHANGELOG.md')
+            fi
+            if ! git -C "${target}" add -- "${stage_paths[@]}"; then
+              failed+=("stage: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
 
             if ! git -C "${target}" commit --quiet -m 'chore(refresh): refreshed configuration and documentation'; then
               failed+=("commit: ${target_repo}")
@@ -821,7 +816,7 @@ jobs:
                   --base "${default_branch}" \
                   --head "${REFRESH_BRANCH}" \
                   --title 'chore(refresh): refreshed configuration and documentation' \
-                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\nClaude Code ran a read-only prompt audit, then reviewed the in-scope configuration and documentation files (currently `CLAUDE.md`, `.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md`) against the current code, updated whichever drifted, and recorded the change as a `.changes/unreleased/` fragment (chlog repositories) or under `[Unreleased]` in `CHANGELOG.md` (everywhere else).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
+                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\nClaude Code ran a read-only prompt audit, then reviewed the discovered instruction files, skills, agents, custom commands, `README.md`, and `CONTRIBUTING.md` against the current code, updated whichever drifted, and recorded the change as a `.changes/unreleased/` fragment (chlog repositories) or under `[Unreleased]` in `CHANGELOG.md` (everywhere else).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
                 echo "Created ${pr_url}"
                 prs_created+=("${target_repo} (${pr_url})")
               else

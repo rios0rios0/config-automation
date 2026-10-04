@@ -37,6 +37,14 @@ class AuditAndRefreshTest(unittest.TestCase):
             binary = root / "claude"
             binary.write_text(CLAUDE_DOUBLE)
             binary.chmod(0o755)
+            scope = root / "scope.json"
+            scope.write_text(json.dumps({
+                "existing": ["README.md", "packages/api/AGENTS.md", ".claude/skills/check/references/usage.md"],
+                "creatable": ["CLAUDE.md"],
+                "allowed_tools": ["Read", "Grep", "Glob", "Edit(/CLAUDE.md)",
+                                  "Edit(/README.md)", "Edit(/packages/api/AGENTS.md)",
+                                  "Edit(/.claude/skills/check/references/usage.md)"],
+            }))
             calls = root / "calls.jsonl"
             scratch = root / "scratch"
             scratch.mkdir()
@@ -45,7 +53,7 @@ class AuditAndRefreshTest(unittest.TestCase):
                        AUDIT_RESULT=audit_result, **overrides)
             result = subprocess.run(
                 ["bash", str(SCRIPT), "Refresh only supported guidance.",
-                 "claude-opus-5-5", "7", changelog_tools],
+                 "claude-opus-5-5", "7", changelog_tools, str(scope)],
                 cwd=root, env=env, input="next repository\n", text=True,
                 capture_output=True, check=False,
             )
@@ -66,6 +74,8 @@ class AuditAndRefreshTest(unittest.TestCase):
         self.assertEqual(audit[audit.index("--permission-mode") + 1], "dontAsk")
         self.assertIn("CLAUDE.md:4: stale command", refresh[1])
         self.assertIn("review data", refresh[1])
+        self.assertIn("## Allowed files for this repository", refresh[1])
+        self.assertIn("packages/api/AGENTS.md", refresh[1])
         for call in calls:
             args = call["args"]
             self.assertEqual(args[args.index("--model") + 1], "claude-opus-5-5")
@@ -79,9 +89,9 @@ class AuditAndRefreshTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 args = calls[1]["args"]
                 self.assertEqual(args[args.index("--allowedTools") + 1],
-                                 "Read,Grep,Glob,Edit(/CLAUDE.md),"
-                                 "Edit(/.github/copilot-instructions.md),"
-                                 "Edit(/.github/skills/code-review/SKILL.md)" + extra)
+                                 "Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/README.md),"
+                                 "Edit(/packages/api/AGENTS.md),"
+                                 "Edit(/.claude/skills/check/references/usage.md)" + extra)
 
     def test_failed_audit_preserves_diagnostics_and_does_not_refresh(self):
         for diagnostic in ("monthly usage limit", "safeguards flagged", "network error"):
