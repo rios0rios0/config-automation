@@ -1,3 +1,0 @@
-kind: 'Added'
-body: 'added a read-only prompt audit before each configuration refresh and verified its findings within the existing edit scope'
-time: '2026-10-04T15:26:10.969447466Z'

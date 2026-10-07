@@ -22,6 +22,18 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-07
+
+### Added
+
+- added a read-only prompt audit before each configuration refresh and verified its findings within the existing edit scope
+- expanded scheduled refreshes to existing nested agent instructions, scoped rules, skills and references, agents, custom commands, README, and CONTRIBUTING through a shared file manifest
+
+### Changed
+
+- changed `.gitignore` to carry the block `make gitignore` generates from the shared pipeline, so the reports `make sast` writes under `reports/`, the CodeQL database a failed scan leaves behind and the other files the pipeline writes into the working tree are ignored instead of waiting to be committed
+- selected Claude Opus 5.5 for both refresh phases through the `CLAUDE_MODEL` repository variable
+
 ## [0.9.3] - 2026-09-14
 
 ### Changed
