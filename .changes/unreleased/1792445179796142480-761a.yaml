@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'stopped the refresh phase from loading the target repository''s settings, hooks, and MCP servers, which ran with the workflow''s tokens in their environment; it now runs isolated and with `--permission-mode dontAsk`, like the audit'
+time: '2026-10-19T21:26:19.796099125Z'

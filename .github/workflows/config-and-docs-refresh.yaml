@@ -266,7 +266,9 @@ jobs:
       # scripts/refresh_scope.py (including existing scoped guidance,
       # skills, agents, commands, README, and CONTRIBUTING), plus
       # whichever changelog target that repository's convention calls for
-      # --- see `changelog_mode` in the loop below. Without this allowlist,
+      # --- see `changelog_mode` in the loop below. A CLAUDE.md that only
+      # imports AGENTS.md is written by scripts/agents_layout.py and is
+      # never granted. Without this allowlist,
       # telemetry showed ~30 `permission_denials_count` per run because the
       # CLI probes many tools but the default harness denies most of them,
       # which burned turns and API spend on every no-drift no-op. See
@@ -296,6 +298,8 @@ jobs:
           GH_TOKEN: ${{ secrets[matrix.batch.secret] }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
+          # Opus 5.5 runs at `medium` effort in Claude Code unless told otherwise.
+          CLAUDE_EFFORT: ${{ vars.CLAUDE_EFFORT || 'high' }}
           # No HARDEN_OWNER here: every repo in the matrix carries its own
           # `owner`, so this job never has to guess which one it belongs to.
           REFRESH_BRANCH: 'chore/config-and-docs-refresh'
@@ -356,6 +360,7 @@ jobs:
           # Each clone gets an exact manifest before Claude runs. The same
           # paths drive edit grants, drift, staging, and activity exclusions.
           SCOPE_FILE="${WORK_DIR}/refresh-scope.json"
+          LAYOUT_FILE="${WORK_DIR}/agents-layout.json"
 
           # Defaulted here rather than in the `env:` expression so a dispatched
           # `0` survives as `0`; see the comment on STALE_AFTER_DAYS above.
@@ -410,6 +415,17 @@ jobs:
               continue
             fi
 
+            # AGENTS.md is the instruction file and CLAUDE.md only imports it.
+            # Migrating before scope discovery lets the audit and the refresh
+            # work on the layout the PR proposes; a rename is committed alone
+            # so history follows the file.
+            if ! python3 "${GITHUB_WORKSPACE}/scripts/agents_layout.py" "${target}" > "${LAYOUT_FILE}"; then
+              failed+=("layout: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+            jq -r '.skipped[] | "::warning::Left out of the AGENTS.md layout: " + tojson' "${LAYOUT_FILE}"
+
             if ! python3 "${GITHUB_WORKSPACE}/scripts/refresh_scope.py" "${target}" > "${SCOPE_FILE}"; then
               failed+=("scope: ${target_repo}")
               rm -rf "${target}"
@@ -430,12 +446,16 @@ jobs:
             # never skipped --- asking for one repo by name is an explicit
             # override of the cadence.
             # A repo with no existing assistant guidance cannot be judged
-            # by how quiet it is (README/CONTRIBUTING alone do not count): a dormant repo with no `CLAUDE.md` would
+            # by how quiet it is (README/CONTRIBUTING alone do not count): a dormant repo with no `AGENTS.md` would
             # be skipped on this run and on every run after it, and would never
             # get one. Quiet only means "up to date" once there is something to
-            # be up to date.
+            # be up to date. A repo whose layout was just moved to AGENTS.md is
+            # never skipped either: that move is a change to publish, and a
+            # quiet repo would otherwise keep its legacy CLAUDE.md forever.
             has_output=$(jq -r '.has_guidance' "${SCOPE_FILE}")
-            if [ "${stale_cutoff}" -gt 0 ] && [ -z "${REPO_INPUT}" ] && [ "${has_output}" = 'true' ]; then
+            layout_changed=$(jq -r '.changed' "${LAYOUT_FILE}")
+            if [ "${stale_cutoff}" -gt 0 ] && [ -z "${REPO_INPUT}" ] && [ "${has_output}" = 'true' ] \
+                && [ "${layout_changed}" = 'false' ]; then
               # `--first-parent` is load-bearing, not a tidy-up. Without it,
               # pathspec history simplification follows whichever parent a merge
               # is TREESAME to, so a branch authored on the 20th and merged on
@@ -503,8 +523,8 @@ jobs:
             # appended section has to sit at column 0 to read as Markdown, and
             # a column-0 line inside this block scalar would end the YAML
             # document.
-            repo_prompt="$(printf '%s\n\n---\n\n## Changelog convention for this repository\n\n%s\n' \
-              "${PROMPT_CONTENT}" "${changelog_note}")"
+            repo_prompt="$(printf '%s\n\n---\n\n## Changelog convention for this repository\n\n%s\n\n## Guidance layout for this repository\n\n%s\n' \
+              "${PROMPT_CONTENT}" "${changelog_note}" "$(jq -r '.note' "${LAYOUT_FILE}")")"
 
             # `</dev/null` is load-bearing: without it `claude -p` inherits
             # the outer `while read` loop's stdin (the jq pipe) and consumes
@@ -561,6 +581,13 @@ jobs:
                 echo "--> claude exited ${claude_rc}; moving on to the next repo."
                 failed+=("claude: ${target_repo}")
               fi
+              rm -rf "${target}"
+              continue
+            fi
+
+            # A root AGENTS.md the refresh created still needs its CLAUDE.md import.
+            if ! python3 "${GITHUB_WORKSPACE}/scripts/agents_layout.py" "${target}" >/dev/null; then
+              failed+=("layout: ${target_repo}")
               rm -rf "${target}"
               continue
             fi
@@ -816,7 +843,7 @@ jobs:
                   --base "${default_branch}" \
                   --head "${REFRESH_BRANCH}" \
                   --title 'chore(refresh): refreshed configuration and documentation' \
-                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\nClaude Code ran a read-only prompt audit, then reviewed the discovered instruction files, skills, agents, custom commands, `README.md`, and `CONTRIBUTING.md` against the current code, updated whichever drifted, and recorded the change as a `.changes/unreleased/` fragment (chlog repositories) or under `[Unreleased]` in `CHANGELOG.md` (everywhere else).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
+                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\n`AGENTS.md` is the instruction file and every `CLAUDE.md` holds only the `@AGENTS.md` import. The workflow moves a legacy `CLAUDE.md` into that layout before Claude Code runs, committing a rename on its own so history follows the file.\n\nClaude Code ran a read-only prompt audit, then reviewed `AGENTS.md`, the other discovered instruction files, skills, agents, custom commands, `README.md`, and `CONTRIBUTING.md` against the current code, updated whichever drifted, and recorded the change as a `.changes/unreleased/` fragment (chlog repositories) or under `[Unreleased]` in `CHANGELOG.md` (everywhere else).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
                 echo "Created ${pr_url}"
                 prs_created+=("${target_repo} (${pr_url})")
               else

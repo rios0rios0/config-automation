@@ -67,6 +67,9 @@ manifest drives exact edit grants, the prompt inventory, drift detection, stagin
 and the activity gate. Extend discovery and its tests together when adding a file
 category, and update `scripts/refresh_config_and_docs_prompt.md` with the relevant
 editing rules. Preserve frontmatter, model/tool configuration, and generated content.
+`scripts/agents_layout.py` runs before discovery and keeps `AGENTS.md` as the
+instruction file with a one-line `CLAUDE.md` importing it; change it together with
+`test/scripts/test_agents_layout.py`.
 
 Run the offline tests before a workflow change:
 
@@ -76,8 +79,9 @@ python3 -m unittest discover -s test/scripts -v
 
 These tests execute the batch shell against local Git repositories with Claude
 and GitHub CLI doubles. They cover every supported category reaching a single PR,
-no-op runs, tracked deletions, failures that must not abort the batch, and the
-activity gate excluding refresh output without skipping initial guidance.
+the `AGENTS.md` migration and its separate rename commit, no-op runs, tracked
+deletions, failures that must not abort the batch, and the activity gate excluding
+refresh output without skipping initial guidance or a pending migration.
 
 GitHub Actions workflows can only be fully exercised by running them. For the config-and-docs refresh, trigger a single-repo dispatch against a low-risk target after merge:
 

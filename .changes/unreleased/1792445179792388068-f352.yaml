@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'changed the weekly refresh to create root `AGENTS.md` instead of `CLAUDE.md`, to keep every `CLAUDE.md` beside an `AGENTS.md` as an import Claude has no grant to edit, to never skip a quiet repository whose layout it just migrated, and to audit and refine `AGENTS.md` against Claude Code''s guidance for instruction files'
+time: '2026-10-19T21:26:19.792344527Z'
