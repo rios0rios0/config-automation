@@ -261,7 +261,7 @@ files, which a `sonar.exclusions` entry would have silenced too. Third-party act
 pinned to a full commit SHA — that policy is enforced by the `pipelines` scheduled dependency job,
 which fails when any pin goes stale, not by S7637.
 
-See `CLAUDE.md` for invariants and conventions.
+See `AGENTS.md` for invariants and conventions.
 
 ## Development
 

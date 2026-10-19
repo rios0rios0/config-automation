@@ -1,6 +1,6 @@
 # GitHub Copilot Instructions — config-automation
 
-This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum context needed to work in this repository without first reading the whole codebase. Keep it in sync with `CLAUDE.md` and `README.md`; any change to the compliance policy, CLI flags, workflows, or build commands must be reflected here in the same commit.
+This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum context needed to work in this repository without first reading the whole codebase. Keep it in sync with `AGENTS.md` and `README.md`; any change to the compliance policy, CLI flags, workflows, or build commands must be reflected here in the same commit.
 
 ## Project Purpose
 
@@ -130,7 +130,7 @@ Ruleset and branch-protection changes propagate to every `rios0rios0` repo on th
 
 1. Update the policy tests under `internal/domain/entities/` and the command tests under `internal/domain/commands/`.
 2. Run `HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run` and confirm the non-compliant set matches expectations.
-3. Update `CLAUDE.md`, `README.md`, and this file together.
+3. Update `AGENTS.md`, `README.md`, and this file together.
 4. Record the change in a fragment: `chlog new --kind Changed --body '...'`.
 
 The same applies to `sonar_analysis_policy.go`: a change there rewrites a project setting on every project of the SonarQube Cloud organization on the next daily run, and every rule it lists stops being reported. Preview it with `go run ./cmd/harden-repos --sonar-policy --dry-run` (no credential needed) before merging, and never widen the exclusion from a rule key to a file pattern.

@@ -37,7 +37,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    chlog new --kind Added --body 'added the thing that was not there before'
    ```
    Write it in the same commit that introduces the change.
-7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `CLAUDE.md` and `README.md` to match.
+7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `AGENTS.md` and `README.md` to match.
 8. Commit following the [commit conventions](https://github.com/rios0rios0/guide/wiki/Git-Flow).
 9. Open a pull request against `main`.
 
