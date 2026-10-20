@@ -151,10 +151,10 @@ files the PR proposes:
 | Found | Result |
 |---|---|
 | `CLAUDE.md` only | Renamed to `AGENTS.md` in its own commit (history follows the file), banner updated, `CLAUDE.md` recreated as the import |
-| `CLAUDE.md` and `AGENTS.md` | Text `CLAUDE.md` adds is appended under `## Migrated from CLAUDE.md` for the refresh to integrate; `CLAUDE.md` becomes the import |
+| `CLAUDE.md` and `AGENTS.md` | `CLAUDE.md` text is appended under `## Migrated from CLAUDE.md` for the refresh to integrate, unless `AGENTS.md` already holds it line for line; `CLAUDE.md` becomes the import |
 | `AGENTS.md` only, or a symlink between the two | `CLAUDE.md` written as the import file |
 | `CLAUDE.md` importing a missing `AGENTS.md` | Reported; the refresh may create `AGENTS.md` |
-| Any other symlink, ignored path, or non-UTF-8 file | Left unchanged and reported |
+| Any other symlink, ignored path, or non-UTF-8 file | Reported; neither file of that pair is changed |
 
 `.claude/CLAUDE.md` and dependency/build directories are left alone. The workflow
 owns the one-line `CLAUDE.md` files: they are staged and drift-checked but never

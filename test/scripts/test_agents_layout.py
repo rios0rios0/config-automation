@@ -93,6 +93,31 @@ class AgentsLayoutTest(unittest.TestCase):
         self.assertEqual(self.read("AGENTS.md"), "# Guidance\n\nRun make test.\n")
         self.assertEqual(self.read("CLAUDE.md"), POINTER)
 
+    def test_should_append_claude_text_when_it_only_appears_inside_a_longer_agents_line(self):
+        # given
+        self.commit({"AGENTS.md": "# Guidance\n\nDo not run make test.\n", "CLAUDE.md": "run make test.\n"})
+
+        # when
+        self.normalize()
+
+        # then
+        self.assertEqual(self.read("AGENTS.md"),
+                         "# Guidance\n\nDo not run make test.\n\n## Migrated from CLAUDE.md\n\nrun make test.\n")
+
+    def test_should_keep_import_examples_inside_code_blocks_when_merging(self):
+        # given
+        example = ("Import it with:\n\n```markdown\n@AGENTS.md\n```\n\n"
+                   "Or nest it:\n\n~~~markdown\n```\n@AGENTS.md\n```\n~~~\n")
+        self.commit({"AGENTS.md": "# Guidance\n", "CLAUDE.md": "@AGENTS.md\n\n" + example})
+
+        # when
+        report = self.normalize()
+
+        # then
+        self.assertEqual(report["merged"], ["CLAUDE.md"])
+        self.assertEqual(self.read("AGENTS.md"), "# Guidance\n\n## Migrated from CLAUDE.md\n\n" + example)
+        self.assertEqual(self.read("CLAUDE.md"), POINTER)
+
     def test_should_add_the_import_when_only_agents_md_exists(self):
         # given
         self.commit({"AGENTS.md": "# Guidance\n", "tools/AGENTS.md": "# Tools\n"})
@@ -162,6 +187,24 @@ class AgentsLayoutTest(unittest.TestCase):
         self.assertEqual(report["skipped"], ["CLAUDE.md", "ignored/CLAUDE.md"])
         self.assertFalse(report["changed"])
         self.assertTrue((self.root / "CLAUDE.md").is_symlink())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_should_leave_both_files_of_a_skipped_pair_unchanged(self):
+        # given
+        files = {"README.md": "# Read me\n", "AGENTS.md": LEGACY + "\nShared.\n",
+                 ".gitignore": "/local/\n", "local/AGENTS.md": "# Local\n",
+                 "local/CLAUDE.md": "# Local Claude\n"}
+        self.commit(files, links={"CLAUDE.md": "README.md"})
+
+        # when
+        report = self.normalize()
+
+        # then
+        self.assertEqual(report["skipped"], ["CLAUDE.md", "local/CLAUDE.md"])
+        self.assertEqual(report["rebannered"], [])
+        self.assertFalse(report["changed"])
+        for path, content in files.items():
+            self.assertEqual(self.read(path), content)
         self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_should_ignore_claude_directory_and_dependency_paths(self):

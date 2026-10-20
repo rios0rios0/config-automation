@@ -31,11 +31,13 @@ excluded dependency/build directories:
 - a `CLAUDE.md` with no `AGENTS.md` is renamed with `git mv` and committed alone
   (`chore(refresh): renamed ...`), so `git log --follow AGENTS.md` keeps its history,
   then recreated as the import, and its legacy banner is replaced;
-- a `CLAUDE.md` beside an `AGENTS.md` has whatever it adds appended under
-  `## Migrated from CLAUDE.md` (the refresh integrates it), then becomes the import;
+- a `CLAUDE.md` beside an `AGENTS.md` is appended to it under
+  `## Migrated from CLAUDE.md`, unless `AGENTS.md` already holds that text line
+  for line (the refresh integrates it), then becomes the import;
 - an `AGENTS.md` without a `CLAUDE.md` gets the import, and a symlink between the two
   becomes the import file (Edit cannot write through a symlink);
-- other symlinks, ignored paths, and non-UTF-8 files are reported, never changed.
+- a pair holding any other symlink, an ignored path, or a non-UTF-8 file is
+  reported, and neither of its files is changed.
 
 The rename commit moves `HEAD`, so drift is measured against it and the branch
 carries two commits. A second pass after the refresh adds the import for an
