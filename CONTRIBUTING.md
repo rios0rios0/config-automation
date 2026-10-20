@@ -26,7 +26,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    make lint
    make test
    make sast
-   python3 -m unittest discover -s test/scripts -v
+   go test -count=1 ./test/scripts/...
    ```
 5. If your change touches `cmd/harden-repos/`, also run a single-repo audit against a safe target:
    ```bash
@@ -52,6 +52,8 @@ go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
 
 Test data builders live under `test/domain/builders/`; in-memory doubles live under `test/domain/doubles/repositories/`.
 
+The `refresh-docs` suites are untagged, so a plain `go test ./...` runs them. `test/scripts/`, which runs the refresh's shell against local repositories, sits outside the directories `make test` covers; run it with `go test -count=1 ./test/scripts/...`, since Go's test cache does not see the binary and scripts it runs in child processes.
+
 ## Hardening Policy Changes
 
 Constants in `internal/domain/entities/compliance_policy.go` and the policy carve-outs in `AuditResult.ComputeIssues()` propagate to every `rios0rios0` repo on the next audit run, and `internal/domain/entities/sonar_analysis_policy.go` does the same to every SonarQube Cloud project (a rule added there stops being reported anywhere). Treat policy edits carefully:
@@ -62,19 +64,20 @@ Constants in `internal/domain/entities/compliance_policy.go` and the policy carv
 
 ## Testing Workflow Changes
 
-The refresh scope is defined by `scripts/refresh_scope.py`. Its per-repository
+The refresh scope is defined by `refresh-docs scope` (`DiscoverRefreshScopeCommand`,
+with its path rules in `internal/domain/entities/refresh_scope.go`). Its per-repository
 manifest drives exact edit grants, the prompt inventory, drift detection, staging,
 and the activity gate. Extend discovery and its tests together when adding a file
 category, and update `scripts/refresh_config_and_docs_prompt.md` with the relevant
 editing rules. Preserve frontmatter, model/tool configuration, and generated content.
-`scripts/agents_layout.py` runs before discovery and keeps `AGENTS.md` as the
-instruction file with a one-line `CLAUDE.md` importing it; change it together with
-`test/scripts/test_agents_layout.py`.
+`refresh-docs layout` (`NormalizeAgentsLayoutCommand`) runs before discovery and keeps
+`AGENTS.md` as the instruction file with a one-line `CLAUDE.md` importing it; change
+it together with its tests in `internal/domain/commands/`.
 
 Run the offline tests before a workflow change:
 
 ```bash
-python3 -m unittest discover -s test/scripts -v
+go test -count=1 ./cmd/refresh-docs/... ./internal/... ./test/scripts/...
 ```
 
 These tests execute the batch shell against local Git repositories with Claude

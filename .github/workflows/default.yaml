@@ -25,8 +25,18 @@ jobs:
     steps:
       - name: 'Checkout config-automation'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16' # v6.5.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      # The shared test stage covers cmd/ and internal/ only, so the suites that
+      # run the refresh's shell against local repositories run here. They build
+      # refresh-docs and run the scripts in child processes, which Go's test
+      # cache does not track, so `-count=1` keeps a restored cache from
+      # replaying a pass after a change to them.
       - name: 'Run shell orchestration tests'
-        run: 'python3 -m unittest discover -s test/scripts -v'
+        run: 'go test -count=1 ./test/scripts/...'
 
   default:
     uses: 'rios0rios0/pipelines/.github/workflows/go-binary.yaml@main'
