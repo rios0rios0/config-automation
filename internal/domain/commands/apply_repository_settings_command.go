@@ -15,7 +15,7 @@ type ApplyRepositorySettingsCommand struct {
 	reposRepo repositories.Repository
 }
 
-// NewApplyRepositorySettingsCommand is the Dig-injectable constructor.
+// NewApplyRepositorySettingsCommand is the constructor the composition root calls.
 func NewApplyRepositorySettingsCommand(reposRepo repositories.Repository) *ApplyRepositorySettingsCommand {
 	return &ApplyRepositorySettingsCommand{reposRepo: reposRepo}
 }

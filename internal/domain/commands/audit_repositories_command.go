@@ -17,7 +17,7 @@ type AuditRepositoriesCommand struct {
 	branchProtectionRepo repositories.BranchProtectionsRepository
 }
 
-// NewAuditRepositoriesCommand is the Dig-injectable constructor.
+// NewAuditRepositoriesCommand is the constructor the composition root calls.
 func NewAuditRepositoriesCommand(
 	reposRepo repositories.Repository,
 	securityRepo repositories.SecuritySettingsRepository,

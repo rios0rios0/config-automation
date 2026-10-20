@@ -17,7 +17,7 @@ type ApplySecuritySettingsCommand struct {
 	securityRepo repositories.SecuritySettingsRepository
 }
 
-// NewApplySecuritySettingsCommand is the Dig-injectable constructor.
+// NewApplySecuritySettingsCommand is the constructor the composition root calls.
 func NewApplySecuritySettingsCommand(
 	securityRepo repositories.SecuritySettingsRepository,
 ) *ApplySecuritySettingsCommand {

@@ -39,9 +39,9 @@ type SonarCloudSonarProjectsRepository struct {
 	token  string
 }
 
-// NewSonarCloudSonarProjectsRepository is the Dig-injectable
-// constructor. The host carries no trailing slash by the time it gets
-// here (newSonarConfig trims it).
+// NewSonarCloudSonarProjectsRepository is the constructor the composition
+// root calls. The host carries no trailing slash by the time it gets
+// here (NewSonarConfig trims it).
 func NewSonarCloudSonarProjectsRepository(config SonarConfig) *SonarCloudSonarProjectsRepository {
 	return &SonarCloudSonarProjectsRepository{
 		client: http.DefaultClient,

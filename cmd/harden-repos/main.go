@@ -105,7 +105,7 @@ func main() {
 
 	owners := parseOwners(os.Getenv("HARDEN_OWNER"))
 
-	set := injectCommands()
+	set := initializeCommands()
 	ctx := context.Background()
 
 	switch {

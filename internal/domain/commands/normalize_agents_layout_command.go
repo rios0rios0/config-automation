@@ -23,7 +23,7 @@ type NormalizeAgentsLayoutCommand struct {
 	handlers    map[entities.LayoutPairState]layoutHandler
 }
 
-// NewNormalizeAgentsLayoutCommand is the Dig-injectable constructor. A pair
+// NewNormalizeAgentsLayoutCommand is the constructor the composition root calls. A pair
 // whose state has no handler is skipped.
 func NewNormalizeAgentsLayoutCommand(workingTree repositories.WorkingTreeRepository) *NormalizeAgentsLayoutCommand {
 	command := &NormalizeAgentsLayoutCommand{workingTree: workingTree}

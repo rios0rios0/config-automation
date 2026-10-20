@@ -20,7 +20,7 @@ type GoGithubBranchProtectionsRepository struct {
 	client *github.Client
 }
 
-// NewGoGithubBranchProtectionsRepository is the Dig-injectable constructor.
+// NewGoGithubBranchProtectionsRepository is the constructor the composition root calls.
 func NewGoGithubBranchProtectionsRepository(client *github.Client) *GoGithubBranchProtectionsRepository {
 	return &GoGithubBranchProtectionsRepository{client: client}
 }

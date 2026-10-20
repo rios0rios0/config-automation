@@ -6,7 +6,6 @@ require (
 	github.com/google/go-github/v75 v75.0.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
-	go.uber.org/dig v1.19.0
 	golang.org/x/oauth2 v0.37.0
 )
 

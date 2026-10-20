@@ -18,7 +18,7 @@ type DiscoverRefreshScopeCommand struct {
 	workingTree repositories.WorkingTreeRepository
 }
 
-// NewDiscoverRefreshScopeCommand is the Dig-injectable constructor.
+// NewDiscoverRefreshScopeCommand is the constructor the composition root calls.
 func NewDiscoverRefreshScopeCommand(workingTree repositories.WorkingTreeRepository) *DiscoverRefreshScopeCommand {
 	return &DiscoverRefreshScopeCommand{workingTree: workingTree}
 }
