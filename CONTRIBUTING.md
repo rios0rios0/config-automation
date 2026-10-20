@@ -43,16 +43,16 @@ development practices, refer to the **[Development Guide](https://github.com/rio
 
 ## Testing
 
-Unit tests use `//go:build unit`, BDD-style `// given / // when / // then` blocks, and in-memory doubles (no `testify/mock`). Place new tests next to the production code in a `_test` package (external tests):
+Unit tests carry no build tag and use BDD-style `// given / // when / // then` blocks and in-memory doubles (no `testify/mock`). Place new tests next to the production code in a `_test` package (external tests):
 
 ```bash
-go test -tags=unit ./...
-go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
+go test ./...
+go test -run TestAuditRepositoriesCommand ./internal/domain/commands/
 ```
 
 Test data builders live under `test/domain/builders/`; in-memory doubles live under `test/domain/doubles/repositories/`.
 
-The `refresh-docs` suites are untagged, so a plain `go test ./...` runs them. `test/scripts/`, which runs the refresh's shell against local repositories, sits outside the directories `make test` covers; run it with `go test -count=1 ./test/scripts/...`, since Go's test cache does not see the binary and scripts it runs in child processes.
+`test/scripts/`, which runs the refresh's shell against local repositories, sits outside the directories `make test` covers; run it with `go test -count=1 ./test/scripts/...`, since Go's test cache does not see the binary and scripts it runs in child processes.
 
 ## Hardening Policy Changes
 

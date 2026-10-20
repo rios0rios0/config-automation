@@ -1,5 +1,3 @@
-//go:build unit
-
 package commands_test
 
 import (
@@ -71,12 +69,16 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 		// when
 		var skipped []string
 		var changes []commands.ApplySecuritySettingsChange
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplySecuritySettingsListeners{
-			OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
-			OnSkip:    func(name, _ string) { skipped = append(skipped, name) },
-			OnSuccess: func(_, _, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplySecuritySettingsListeners{
+				OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
+				OnSkip:    func(name, _ string) { skipped = append(skipped, name) },
+				OnSuccess: func(_, _, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, securityRepo.SecretScanningEnabled)
@@ -104,12 +106,16 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 		var skipped []string
 		var changes []commands.ApplySecuritySettingsChange
 		var actionsChanges int
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplySecuritySettingsListeners{
-			OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
-			OnSkip:    func(name, _ string) { skipped = append(skipped, name) },
-			OnSuccess: func(_, _, actions int) { actionsChanges = actions },
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplySecuritySettingsListeners{
+				OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
+				OnSkip:    func(name, _ string) { skipped = append(skipped, name) },
+				OnSuccess: func(_, _, actions int) { actionsChanges = actions },
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Equal(t, []string{"forked"}, securityRepo.ActionsDisabled)
@@ -138,11 +144,15 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 
 		// when
 		var changes []commands.ApplySecuritySettingsChange
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplySecuritySettingsListeners{
-			OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
-			OnSuccess: func(_, _, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplySecuritySettingsListeners{
+				OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
+				OnSuccess: func(_, _, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Equal(t, []string{"forked"}, securityRepo.ActionsDisabled)
@@ -160,11 +170,15 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 
 		// when
 		var changes []commands.ApplySecuritySettingsChange
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplySecuritySettingsListeners{
-			OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
-			OnSuccess: func(_, _, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplySecuritySettingsListeners{
+				OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
+				OnSuccess: func(_, _, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, securityRepo.ActionsDisabled)
@@ -188,11 +202,15 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 		var errored []string
 		var received error
 		var actionsChanges int
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplySecuritySettingsListeners{
-			OnChange:  func(_ commands.ApplySecuritySettingsChange) { t.Error("OnChange should not be called") },
-			OnSuccess: func(_, _, actions int) { actionsChanges = actions },
-			OnError:   func(name string, err error) { errored = append(errored, name); received = err },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplySecuritySettingsListeners{
+				OnChange:  func(_ commands.ApplySecuritySettingsChange) { t.Error("OnChange should not be called") },
+				OnSuccess: func(_, _, actions int) { actionsChanges = actions },
+				OnError:   func(name string, err error) { errored = append(errored, name); received = err },
+			},
+		)
 
 		// then
 		assert.Equal(t, []string{"forked"}, errored)
@@ -217,10 +235,14 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 		command := commands.NewApplySecuritySettingsCommand(securityRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplySecuritySettingsListeners{
-			OnSuccess: func(_, _, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplySecuritySettingsListeners{
+				OnSuccess: func(_, _, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, securityRepo.SecretScanningEnabled)
@@ -243,10 +265,18 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 		command := commands.NewApplySecuritySettingsCommand(securityRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}, DryRun: true}, commands.ApplySecuritySettingsListeners{
-			OnSuccess: func(_, _, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{
+				Owner:  "rios0rios0",
+				Audits: []entities.AuditResult{audit},
+				DryRun: true,
+			},
+			commands.ApplySecuritySettingsListeners{
+				OnSuccess: func(_, _, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, securityRepo.SecretScanningEnabled)
@@ -267,11 +297,19 @@ func TestApplySecuritySettingsCommand(t *testing.T) {
 
 		// when
 		var changes []commands.ApplySecuritySettingsChange
-		command.Execute(context.TODO(), commands.ApplySecuritySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}, DryRun: true}, commands.ApplySecuritySettingsListeners{
-			OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
-			OnSuccess: func(_, _, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplySecuritySettingsInput{
+				Owner:  "rios0rios0",
+				Audits: []entities.AuditResult{audit},
+				DryRun: true,
+			},
+			commands.ApplySecuritySettingsListeners{
+				OnChange:  func(c commands.ApplySecuritySettingsChange) { changes = append(changes, c) },
+				OnSuccess: func(_, _, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, securityRepo.ActionsDisabled)

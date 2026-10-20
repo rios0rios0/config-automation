@@ -1,5 +1,3 @@
-//go:build unit
-
 package commands_test
 
 import (
@@ -30,10 +28,14 @@ func TestListTargetRepositoriesCommand(t *testing.T) {
 		var received []entities.Repository
 
 		// when
-		command.Execute(context.TODO(), commands.ListTargetRepositoriesInput{Owner: "rios0rios0"}, commands.ListTargetRepositoriesListeners{
-			OnSuccess: func(repos []entities.Repository) { received = repos },
-			OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ListTargetRepositoriesInput{Owner: "rios0rios0"},
+			commands.ListTargetRepositoriesListeners{
+				OnSuccess: func(repos []entities.Repository) { received = repos },
+				OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
+			},
+		)
 
 		// then
 		require.Len(t, received, 1)
@@ -50,10 +52,14 @@ func TestListTargetRepositoriesCommand(t *testing.T) {
 		var received []entities.Repository
 
 		// when
-		command.Execute(context.TODO(), commands.ListTargetRepositoriesInput{Owner: "rios0rios0"}, commands.ListTargetRepositoriesListeners{
-			OnSuccess: func(repos []entities.Repository) { received = repos },
-			OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ListTargetRepositoriesInput{Owner: "rios0rios0"},
+			commands.ListTargetRepositoriesListeners{
+				OnSuccess: func(repos []entities.Repository) { received = repos },
+				OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
+			},
+		)
 
 		// then
 		assert.Empty(t, received)

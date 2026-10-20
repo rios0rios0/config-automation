@@ -1,5 +1,3 @@
-//go:build unit
-
 package repositories_test
 
 import (
@@ -36,12 +34,15 @@ type sonarRequest struct {
 // receives, and a wrong one — `fieldValues` sent as separate `ruleKey`
 // and `resourceKey` params, say — compiles, passes a dry run, and only
 // fails against the live API.
-func newSonarServer(t *testing.T, bodies map[string]string) (*infra.SonarCloudSonarProjectsRepository, *[]sonarRequest) {
+func newSonarServer(
+	t *testing.T,
+	bodies map[string]string,
+) (*infra.SonarCloudSonarProjectsRepository, *[]sonarRequest) {
 	t.Helper()
 
 	recorded := make([]sonarRequest, 0)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.NoError(t, r.ParseForm())
+		assert.NoError(t, r.ParseForm())
 		recorded = append(recorded, sonarRequest{
 			Method: r.Method,
 			Path:   r.URL.Path,

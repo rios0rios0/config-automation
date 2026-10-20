@@ -1,5 +1,3 @@
-//go:build unit
-
 package repositories_test
 
 import (
@@ -15,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rios0rios0/config-automation/test/domain/builders"
 	infra "github.com/rios0rios0/config-automation/internal/infrastructure/repositories"
+	"github.com/rios0rios0/config-automation/test/domain/builders"
 )
 
 // newSecurityServer answers every call FindByRepositoryName makes — the

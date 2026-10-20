@@ -1,5 +1,3 @@
-//go:build unit
-
 package repositories_test
 
 import (
@@ -34,7 +32,7 @@ func newCapturingClient(t *testing.T, captured *[]byte, method, path string) *gi
 		assert.Equal(t, path, r.URL.Path)
 
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		*captured = body
 
 		w.Header().Set("Content-Type", "application/json")

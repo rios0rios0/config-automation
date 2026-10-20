@@ -1,5 +1,3 @@
-//go:build unit
-
 package commands_test
 
 import (
@@ -68,10 +66,14 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 
 		// when
 		var changed, compliant int
-		command.Execute(context.TODO(), commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyRepositorySettingsListeners{
-			OnSuccess: func(c, cp int) { changed = c; compliant = cp },
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyRepositorySettingsListeners{
+				OnSuccess: func(c, cp int) { changed = c; compliant = cp },
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, reposRepo.Saves)
@@ -91,10 +93,14 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 		command := commands.NewApplyRepositorySettingsCommand(reposRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyRepositorySettingsListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyRepositorySettingsListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, reposRepo.Saves, "wiki allowlist should prevent any PATCH")
@@ -112,10 +118,14 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 		command := commands.NewApplyRepositorySettingsCommand(reposRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyRepositorySettingsListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyRepositorySettingsListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, reposRepo.Saves)
@@ -160,10 +170,14 @@ func TestApplyRepositorySettingsCommand(t *testing.T) {
 
 		// when
 		var receivedErr error
-		command.Execute(context.TODO(), commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyRepositorySettingsListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, err error) { receivedErr = err },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyRepositorySettingsInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyRepositorySettingsListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, err error) { receivedErr = err },
+			},
+		)
 
 		// then
 		require.Error(t, receivedErr)

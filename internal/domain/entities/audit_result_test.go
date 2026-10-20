@@ -1,5 +1,3 @@
-//go:build unit
-
 package entities_test
 
 import (
@@ -59,7 +57,11 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should skip secret scanning on private repos", func(t *testing.T) {
 		t.Parallel()
 		// given
-		privateRepo := builders.NewRepositoryBuilder().WithName("secret").AsPrivate().WithSettings(entities.DesiredRepoSettings()).Build()
+		privateRepo := builders.NewRepositoryBuilder().
+			WithName("secret").
+			AsPrivate().
+			WithSettings(entities.DesiredRepoSettings()).
+			Build()
 		disabled := true
 		audit := builders.NewAuditResultBuilder().
 			WithRepository(privateRepo).
@@ -85,7 +87,11 @@ func TestAuditResultComputeIssues(t *testing.T) {
 	t.Run("should skip Dependabot on forks", func(t *testing.T) {
 		t.Parallel()
 		// given
-		forkRepo := builders.NewRepositoryBuilder().WithName("forked").AsFork().WithSettings(entities.DesiredRepoSettings()).Build()
+		forkRepo := builders.NewRepositoryBuilder().
+			WithName("forked").
+			AsFork().
+			WithSettings(entities.DesiredRepoSettings()).
+			Build()
 		audit := builders.NewAuditResultBuilder().
 			WithRepository(forkRepo).
 			WithSecurity(entities.SecuritySettings{DependabotUpdates: false}). // alerts unknown, updates off
