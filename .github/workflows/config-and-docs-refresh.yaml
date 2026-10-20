@@ -576,15 +576,25 @@ jobs:
             #     abort, crash. Recorded in `failed` (so the leg goes red)
             #     and skipped, still non-fatal to the rest of the batch.
             #
+            # Claude can echo repository-controlled text, such as a path the
+            # layout skipped, and the runner acts on a workflow command it
+            # finds in step output (`::add-mask::`, `::stop-commands::`, or
+            # `##[...]` anywhere in a line). `::stop-commands::` with a random
+            # token turns that off until the token comes back, so nothing
+            # Claude prints can annotate, mask, or fail the run.
+            #
             # PIPESTATUS[0] holds the subshell's (claude's) exit code;
             # we explicitly do not want `tee`'s exit code, which is
             # almost always 0 and would mask claude failures.
             rm -f "${CLAUDE_LOG}"
+            stop_token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+            echo "::stop-commands::${stop_token}"
             set +e
             ( cd "${target}" && bash "${GITHUB_WORKSPACE}/scripts/audit-and-refresh.sh" \
                   "${repo_prompt}" "${CLAUDE_MODEL}" "${MAX_TURNS}" "${changelog_tools}" "${SCOPE_FILE}" </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
             claude_rc=${PIPESTATUS[0]}
             set -e
+            echo "::${stop_token}::"
             if [ "${claude_rc}" -ne 0 ]; then
               if grep -qF 'monthly usage limit' "${CLAUDE_LOG}"; then
                 echo "--> monthly Claude usage limit reached; skipping the rest of this batch."

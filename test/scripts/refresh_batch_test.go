@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -52,7 +53,7 @@ fi
 
 // batchClaudeStub audits successfully unless FAIL_AUDIT_REPO names the
 // clone, and on refresh records the prompt, applies REFRESH_WRITES (a JSON
-// object of path to content, null deleting).
+// object of path to content, null deleting), and echoes CLAUDE_ECHO.
 const batchClaudeStub = `set -euo pipefail
 basename -- "${PWD}" >> "${FIXTURE_ROOT}/claude-calls"
 if [ "$(wc -c)" -ne 0 ]; then
@@ -78,6 +79,9 @@ while IFS= read -r -d '' path; do
     jq -j --arg path "${path}" '.[$path]' <<< "${REFRESH_WRITES}" > "${path}"
   fi
 done < <(jq -j 'keys_unsorted[] | . + "\u0000"' <<< "${REFRESH_WRITES}")
+if [ -n "${CLAUDE_ECHO:-}" ]; then
+  printf '%s\n' "${CLAUDE_ECHO}"
+fi
 echo 'Refresh completed'
 `
 
@@ -468,5 +472,25 @@ func TestRefreshBatch(t *testing.T) {
 		assert.Contains(t, run.stdout, "layout: fixture/first")
 		assert.Contains(t, run.stdout, "processed (2/2)")
 		assert.Equal(t, "Updated", fixture.show(remote, "README.md"))
+	})
+
+	t.Run("should stop workflow commands while Claude's output is printed", func(t *testing.T) {
+		t.Parallel()
+		// given
+		fixture := newBatchFixture(t)
+		fixture.repository("echo", compliant(map[string]string{"README.md": original}), false)
+		echoed := "::warning::injected ##[add-mask]value"
+
+		// when
+		run := fixture.run(nil, map[string]string{"CLAUDE_ECHO": echoed})
+
+		// then
+		require.Equal(t, 0, run.code, run.stdout+run.stderr)
+		stop := regexp.MustCompile(`(?m)^::stop-commands::([0-9a-f]{32})$`).FindStringSubmatch(run.stdout)
+		require.Len(t, stop, 2, run.stdout)
+		resume := "\n::" + stop[1] + "::\n"
+		require.Contains(t, run.stdout, resume)
+		assert.Less(t, strings.Index(run.stdout, stop[0]), strings.Index(run.stdout, echoed))
+		assert.Less(t, strings.Index(run.stdout, echoed), strings.Index(run.stdout, resume))
 	})
 }
