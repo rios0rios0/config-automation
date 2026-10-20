@@ -305,7 +305,7 @@ make build           # compile bin/harden-repos
 make test            # run unit tests (// given / // when / // then BDD style)
 make lint            # golangci-lint
 make sast            # full SAST suite via rios0rios0/pipelines
-go test ./test/scripts/...  # audit/refresh orchestration against local repositories
+go test -count=1 ./test/scripts/...  # audit/refresh orchestration against local repositories
 make run ARGS='--phase 1 --repo autobump'
 ```
 

@@ -120,7 +120,7 @@ make test                           # go test -race -tags=unit ./...
 make lint                           # golangci-lint run ./...
 make sast                           # run the full SAST suite from rios0rios0/pipelines
 go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
-go test ./test/scripts/...          # the refresh's shell against local Git repositories
+go test -count=1 ./test/scripts/...  # the refresh's shell against local Git repositories (no test cache)
 ```
 
 Test files use the `_test` package suffix (external tests), `t.Parallel()` on every top-level test function, BDD-style `// given / // when / // then` blocks, and the in-memory doubles in `test/domain/doubles/repositories/` rather than interface mocks. The harden-repos suites still carry `//go:build unit`; the `refresh-docs` suites are untagged, so a plain `go test ./...` finds them. `make test` covers only `cmd/` and `internal/`, so CI runs `test/scripts/` in the separate `refresh-tests` job.
