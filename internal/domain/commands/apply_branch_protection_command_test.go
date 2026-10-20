@@ -1,5 +1,3 @@
-//go:build unit
-
 package commands_test
 
 import (
@@ -29,10 +27,14 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 		command := commands.NewApplyBranchProtectionCommand(protectionRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyBranchProtectionListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Len(t, protectionRepo.ProtectionSaves, 1)
@@ -58,10 +60,14 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 		command := commands.NewApplyBranchProtectionCommand(protectionRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyBranchProtectionListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Contains(t, protectionRepo.RulesetsUpdated, audit.Repository.Name)
@@ -76,10 +82,14 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 		command := commands.NewApplyBranchProtectionCommand(protectionRepo)
 
 		// when
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyBranchProtectionListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Contains(t, protectionRepo.RulesetsCreated, audit.Repository.Name)
@@ -97,10 +107,14 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 
 		// when
 		var failures []string
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(name string, _ error) { failures = append(failures, name) },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyBranchProtectionListeners{
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(name string, _ error) { failures = append(failures, name) },
+			},
+		)
 
 		// then
 		assert.Equal(t, []string{audit.Repository.Name}, failures)
@@ -117,11 +131,15 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 
 		// when
 		var skipped []string
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
-			OnSkip:    func(name, _ string) { skipped = append(skipped, name) },
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyBranchProtectionListeners{
+				OnSkip:    func(name, _ string) { skipped = append(skipped, name) },
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, protectionRepo.ProtectionSaves)
@@ -141,11 +159,15 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 
 		// when
 		var skipReasons []string
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}}, commands.ApplyBranchProtectionListeners{
-			OnSkip:    func(_, reason string) { skipReasons = append(skipReasons, reason) },
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}},
+			commands.ApplyBranchProtectionListeners{
+				OnSkip:    func(_, reason string) { skipReasons = append(skipReasons, reason) },
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, protectionRepo.ProtectionSaves)
@@ -164,11 +186,19 @@ func TestApplyBranchProtectionCommand(t *testing.T) {
 
 		// when
 		var changes []commands.ApplyBranchProtectionChange
-		command.Execute(context.TODO(), commands.ApplyBranchProtectionInput{Owner: "rios0rios0", Audits: []entities.AuditResult{audit}, DryRun: true}, commands.ApplyBranchProtectionListeners{
-			OnChange:  func(c commands.ApplyBranchProtectionChange) { changes = append(changes, c) },
-			OnSuccess: func(_, _ int) {},
-			OnError:   func(_ string, _ error) {},
-		})
+		command.Execute(
+			context.TODO(),
+			commands.ApplyBranchProtectionInput{
+				Owner:  "rios0rios0",
+				Audits: []entities.AuditResult{audit},
+				DryRun: true,
+			},
+			commands.ApplyBranchProtectionListeners{
+				OnChange:  func(c commands.ApplyBranchProtectionChange) { changes = append(changes, c) },
+				OnSuccess: func(_, _ int) {},
+				OnError:   func(_ string, _ error) {},
+			},
+		)
 
 		// then
 		assert.Empty(t, protectionRepo.ProtectionSaves)

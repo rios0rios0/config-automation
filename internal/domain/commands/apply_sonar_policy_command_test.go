@@ -1,5 +1,3 @@
-//go:build unit
-
 package commands_test
 
 import (
@@ -53,27 +51,30 @@ func TestApplySonarPolicyCommand(t *testing.T) {
 		assert.Equal(t, entities.DesiredSonarIssueExclusions(), sonarRepo.ExclusionsByKey[project.Key])
 	})
 
-	t.Run("should call OnSkip when the project already carries the policy and has nothing to triage", func(t *testing.T) {
-		t.Parallel()
-		// given — the steady state a daily run must stay quiet on.
-		project := builders.NewSonarProjectBuilder().WithName("autobump").Build()
-		sonarRepo := doubles.NewInMemorySonarProjectsRepository().
-			WithProject(project).
-			WithExclusions(project.Key, entities.DesiredSonarIssueExclusions()...)
-		command := commands.NewApplySonarPolicyCommand(sonarRepo)
+	t.Run(
+		"should call OnSkip when the project already carries the policy and has nothing to triage",
+		func(t *testing.T) {
+			t.Parallel()
+			// given — the steady state a daily run must stay quiet on.
+			project := builders.NewSonarProjectBuilder().WithName("autobump").Build()
+			sonarRepo := doubles.NewInMemorySonarProjectsRepository().
+				WithProject(project).
+				WithExclusions(project.Key, entities.DesiredSonarIssueExclusions()...)
+			command := commands.NewApplySonarPolicyCommand(sonarRepo)
 
-		// when
-		var changes []commands.ApplySonarPolicyChange
-		var skipped []string
-		listeners := noopSonarListeners()
-		listeners.OnChange = func(c commands.ApplySonarPolicyChange) { changes = append(changes, c) }
-		listeners.OnSkip = func(key, _ string) { skipped = append(skipped, key) }
-		command.Execute(context.TODO(), commands.ApplySonarPolicyInput{Organization: sonarOrganization}, listeners)
+			// when
+			var changes []commands.ApplySonarPolicyChange
+			var skipped []string
+			listeners := noopSonarListeners()
+			listeners.OnChange = func(c commands.ApplySonarPolicyChange) { changes = append(changes, c) }
+			listeners.OnSkip = func(key, _ string) { skipped = append(skipped, key) }
+			command.Execute(context.TODO(), commands.ApplySonarPolicyInput{Organization: sonarOrganization}, listeners)
 
-		// then
-		assert.Empty(t, changes)
-		assert.Equal(t, []string{project.Key}, skipped)
-	})
+			// then
+			assert.Empty(t, changes)
+			assert.Equal(t, []string{project.Key}, skipped)
+		},
+	)
 
 	t.Run("should call OnChange with issues_accepted when open findings match the policy rules", func(t *testing.T) {
 		t.Parallel()

@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'changed the unit tests to carry no build tag, so a plain `go test ./...` runs every suite; their first lint also moved two assertions inside HTTP test handlers from `require` to `assert`, since `require` cannot stop a test from the server''s goroutine'
+time: '2026-10-20T16:10:03.909997292Z'

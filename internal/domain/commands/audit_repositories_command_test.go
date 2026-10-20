@@ -1,5 +1,3 @@
-//go:build unit
-
 package commands_test
 
 import (
@@ -35,14 +33,18 @@ func TestAuditRepositoriesCommand(t *testing.T) {
 		var errored error
 
 		// when
-		command.Execute(context.TODO(), commands.AuditRepositoriesInput{Owner: "rios0rios0"}, commands.AuditRepositoriesListeners{
-			OnSuccess: func(audits []entities.AuditResult) {
-				received = audits
+		command.Execute(
+			context.TODO(),
+			commands.AuditRepositoriesInput{Owner: "rios0rios0"},
+			commands.AuditRepositoriesListeners{
+				OnSuccess: func(audits []entities.AuditResult) {
+					received = audits
+				},
+				OnError: func(err error) {
+					errored = err
+				},
 			},
-			OnError: func(err error) {
-				errored = err
-			},
-		})
+		)
 
 		// then
 		require.NoError(t, errored)
@@ -59,15 +61,23 @@ func TestAuditRepositoriesCommand(t *testing.T) {
 		reposRepo := doubles.NewInMemoryRepositoriesRepository().WithRepos(repoA, repoB)
 		securityRepo := doubles.NewInMemorySecuritySettingsRepository().
 			WithSettings("beta", entities.SecuritySettings{SecretScanning: "enabled", PushProtection: "enabled", DependabotUpdates: true})
-		command := commands.NewAuditRepositoriesCommand(reposRepo, securityRepo, doubles.NewInMemoryBranchProtectionsRepository())
+		command := commands.NewAuditRepositoriesCommand(
+			reposRepo,
+			securityRepo,
+			doubles.NewInMemoryBranchProtectionsRepository(),
+		)
 
 		var received []entities.AuditResult
 
 		// when
-		command.Execute(context.TODO(), commands.AuditRepositoriesInput{Owner: "rios0rios0", RepoFilter: "beta"}, commands.AuditRepositoriesListeners{
-			OnSuccess: func(audits []entities.AuditResult) { received = audits },
-			OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.AuditRepositoriesInput{Owner: "rios0rios0", RepoFilter: "beta"},
+			commands.AuditRepositoriesListeners{
+				OnSuccess: func(audits []entities.AuditResult) { received = audits },
+				OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
+			},
+		)
 
 		// then
 		require.Len(t, received, 1)
@@ -89,10 +99,14 @@ func TestAuditRepositoriesCommand(t *testing.T) {
 		var received error
 
 		// when
-		command.Execute(context.TODO(), commands.AuditRepositoriesInput{Owner: "rios0rios0"}, commands.AuditRepositoriesListeners{
-			OnSuccess: func(_ []entities.AuditResult) { t.Fatal("OnSuccess should not be called") },
-			OnError:   func(err error) { received = err },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.AuditRepositoriesInput{Owner: "rios0rios0"},
+			commands.AuditRepositoriesListeners{
+				OnSuccess: func(_ []entities.AuditResult) { t.Fatal("OnSuccess should not be called") },
+				OnError:   func(err error) { received = err },
+			},
+		)
 
 		// then
 		require.Error(t, received)
@@ -106,15 +120,23 @@ func TestAuditRepositoriesCommand(t *testing.T) {
 		reposRepo := doubles.NewInMemoryRepositoriesRepository().WithRepos(repo)
 		securityRepo := doubles.NewInMemorySecuritySettingsRepository()
 		securityRepo.ErrorOnFind = errors.New("permission denied")
-		command := commands.NewAuditRepositoriesCommand(reposRepo, securityRepo, doubles.NewInMemoryBranchProtectionsRepository())
+		command := commands.NewAuditRepositoriesCommand(
+			reposRepo,
+			securityRepo,
+			doubles.NewInMemoryBranchProtectionsRepository(),
+		)
 
 		var received []entities.AuditResult
 
 		// when
-		command.Execute(context.TODO(), commands.AuditRepositoriesInput{Owner: "rios0rios0"}, commands.AuditRepositoriesListeners{
-			OnSuccess: func(audits []entities.AuditResult) { received = audits },
-			OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
-		})
+		command.Execute(
+			context.TODO(),
+			commands.AuditRepositoriesInput{Owner: "rios0rios0"},
+			commands.AuditRepositoriesListeners{
+				OnSuccess: func(audits []entities.AuditResult) { received = audits },
+				OnError:   func(err error) { t.Fatalf("unexpected error: %v", err) },
+			},
+		)
 
 		// then
 		require.Len(t, received, 1)

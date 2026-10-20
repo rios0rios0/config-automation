@@ -97,10 +97,10 @@ Do not change these without updating the policy tests and the audit flow togethe
 
 ```bash
 make build                          # compile bin/harden-repos
-make test                           # go test -race -tags=unit ./...
+make test                           # go test -race over cmd/ and internal/ via rios0rios0/pipelines
 make lint                           # golangci-lint run ./...
 make sast                           # full SAST suite via rios0rios0/pipelines
-go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
+go test -run TestAuditRepositoriesCommand ./internal/domain/commands/
 ```
 
 CLI phases:
@@ -134,7 +134,7 @@ Workflow secrets, one fine-grained PAT per owner shared by the three GitHub work
 ## Conventions
 
 - **Go style** — `snake_case` file names, one-letter receiver names (`c` for `Command`, `r` for `Repository`), Uber Dig for DI, Logrus for logging, testify for assertions, no framework tags on entities.
-- **Tests** — `//go:build unit`, `_test` package suffix, `t.Parallel()` on every top-level test function, BDD `// given` / `// when` / `// then` blocks. Prefer in-memory doubles over `testify/mock`. Builders live under `test/domain/builders/`.
+- **Tests** — no build tag on unit tests (`go test ./...` runs them all), `_test` package suffix, `t.Parallel()` on every top-level test function, BDD `// given` / `// when` / `// then` blocks. Prefer in-memory doubles over `testify/mock`. Builders live under `test/domain/builders/`.
 - **YAML files** — `.yaml` (never `.yml`); single-quote string values except where variable interpolation requires double quotes; never quote booleans or numbers.
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
 - **Changelog** — every change writes its own fragment under `.changes/unreleased/` with `chlog new --kind <Kind> --body '...'`, in the same commit; `CHANGELOG.md` is generated from them and is never edited by hand. Keep a Changelog kinds. Proper nouns capitalized (GitHub, Go, Docker), code identifiers in backticks, versions in backticks.

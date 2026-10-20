@@ -98,7 +98,7 @@ make build && make lint && make test && make sast
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run
 HARDEN_OWNER=rios0rios0 go run ./cmd/harden-repos --phase 1
 go run ./cmd/harden-repos --sonar-policy --dry-run   # preview the SonarQube Cloud analysis policy; needs no credential
-go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
+go test -run TestAuditRepositoriesCommand ./internal/domain/commands/
 ```
 
 ### Local quality gates
@@ -176,7 +176,7 @@ and YAML blocks inside Markdown.
 
 See [Tests](https://github.com/rios0rios0/guide/wiki/Tests).
 
-- `//go:build unit`, `_test` package suffix, `t.Parallel()` on every top-level test function.
+- No build tag on unit tests (a `//go:build unit` tag hides them from a plain `go test ./...`), `_test` package suffix, `t.Parallel()` on every top-level test function.
 - In-memory doubles under `test/domain/doubles/repositories/` are preferred over any mock library; builders live in `test/domain/builders/`.
 - A compliance carve-out without a policy test that pins it is incomplete.
 
