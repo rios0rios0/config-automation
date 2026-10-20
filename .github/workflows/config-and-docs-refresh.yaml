@@ -405,13 +405,13 @@ jobs:
             # second clone collide with the first inside one batch.
             target="${WORK_DIR}/${repo_owner}__${repo_name}"
 
-            # If a previous iteration tripped the org's monthly Claude
-            # usage limit, skip the rest of the batch --- subsequent claude
+            # If a previous iteration tripped a Claude usage limit (weekly or
+            # monthly), skip the rest of the batch --- subsequent claude
             # invocations will all fail with the same error and just burn
             # ~3min/repo. The summary still reports them so it's visible
             # which repos didn't get a chance.
             if [ "${quota_hit}" -eq 1 ]; then
-              echo "=========== [${idx}/${total}] ${target_repo} (SKIPPED: monthly Claude usage limit hit earlier in batch) ==========="
+              echo "=========== [${idx}/${total}] ${target_repo} (SKIPPED: Claude usage limit hit earlier in batch) ==========="
               quota_skipped+=("${target_repo}")
               continue
             fi

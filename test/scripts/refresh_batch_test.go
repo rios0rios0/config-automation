@@ -515,6 +515,7 @@ func TestRefreshBatchUsageLimit(t *testing.T) {
 			assert.Equal(t, 1, run.code, run.stdout+run.stderr)
 			assert.Contains(t, run.stdout, "claude-quota: fixture/first")
 			assert.Contains(t, run.stdout, "quota_skipped (1)")
+			assert.Contains(t, run.stdout, "fixture/second (SKIPPED: Claude usage limit hit earlier in batch)")
 			calls, err := os.ReadFile(filepath.Join(fixture.root, "claude-calls"))
 			require.NoError(t, err)
 			assert.Equal(t, "fixture__first\n", string(calls))
