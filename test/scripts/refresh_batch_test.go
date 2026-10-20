@@ -63,7 +63,7 @@ fi
 for argument in "$@"; do
   if [ "${argument}" = '--output-format' ]; then
     if [ "$(basename -- "${PWD}")" = "${FAIL_AUDIT_REPO:-}" ]; then
-      echo 'network error'
+      echo "${FAIL_AUDIT_MESSAGE:-network error}"
       exit 23
     fi
     echo '{"type":"result","subtype":"success","is_error":false,"result":"Audit completed; proposed corrections."}'
@@ -493,4 +493,31 @@ func TestRefreshBatch(t *testing.T) {
 		assert.Less(t, strings.Index(run.stdout, stop[0]), strings.Index(run.stdout, echoed))
 		assert.Less(t, strings.Index(run.stdout, echoed), strings.Index(run.stdout, resume))
 	})
+}
+
+func TestRefreshBatchUsageLimit(t *testing.T) {
+	t.Parallel()
+
+	for _, message := range []string{"You have hit your weekly limit", "Claude AI monthly usage limit reached"} {
+		t.Run("should skip the rest of the batch when Claude reports: "+message, func(t *testing.T) {
+			t.Parallel()
+			// given
+			fixture := newBatchFixture(t)
+			fixture.repository("first", map[string]string{"README.md": original}, false)
+			fixture.repository("second", map[string]string{"README.md": original}, false)
+
+			// when
+			run := fixture.run(nil, map[string]string{
+				"FAIL_AUDIT_REPO": "fixture__first", "FAIL_AUDIT_MESSAGE": message,
+			})
+
+			// then
+			assert.Equal(t, 1, run.code, run.stdout+run.stderr)
+			assert.Contains(t, run.stdout, "claude-quota: fixture/first")
+			assert.Contains(t, run.stdout, "quota_skipped (1)")
+			calls, err := os.ReadFile(filepath.Join(fixture.root, "claude-calls"))
+			require.NoError(t, err)
+			assert.Equal(t, "fixture__first\n", string(calls))
+		})
+	}
 }

@@ -559,9 +559,10 @@ jobs:
             #
             # Output is tee'd to ${CLAUDE_LOG} so the failure can be told
             # apart:
-            #   - monthly usage limit --- the org's Claude subscription cap
-            #     is exhausted. Every remaining repo would burn ~3min into
-            #     the same wall, so `quota_hit=1` short-circuits the batch.
+            #   - usage limit (`monthly usage limit` or `hit your weekly limit`)
+            #     --- the Claude subscription cap is exhausted. Every
+            #     remaining repo would burn ~3min into the same wall, so
+            #     `quota_hit=1` short-circuits the batch.
             #   - safeguard refusal --- Claude declines the repo's content
             #     (e.g. a security-topic repo trips the cybersecurity
             #     safeguard). This is deterministic for that one repo and
@@ -596,8 +597,8 @@ jobs:
             set -e
             echo "::${stop_token}::"
             if [ "${claude_rc}" -ne 0 ]; then
-              if grep -qF 'monthly usage limit' "${CLAUDE_LOG}"; then
-                echo "--> monthly Claude usage limit reached; skipping the rest of this batch."
+              if grep -qEi 'monthly usage limit|hit your weekly limit' "${CLAUDE_LOG}"; then
+                echo "--> Claude usage limit reached; skipping the rest of this batch."
                 failed+=("claude-quota: ${target_repo}")
                 quota_hit=1
               elif grep -qEi 'safeguards flagged|cyber-use-case' "${CLAUDE_LOG}"; then
