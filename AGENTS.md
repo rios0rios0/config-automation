@@ -24,7 +24,7 @@ This repo houses **scheduled, cross-repo maintenance workflows** that run from a
 
 `AGENTS.md` is the instruction file in every repository the refresh touches; each
 `CLAUDE.md` beside one contains only `@AGENTS.md`, the import Claude Code documents
-for sharing one file with other agents. `scripts/agents_layout.py` enforces that
+for sharing one file with other agents. `refresh-docs layout` (`cmd/refresh-docs`) enforces that
 deterministically, before the audit, for every directory outside `.claude/` and the
 excluded dependency/build directories:
 
@@ -120,9 +120,10 @@ make test                           # go test -race -tags=unit ./...
 make lint                           # golangci-lint run ./...
 make sast                           # run the full SAST suite from rios0rios0/pipelines
 go test -tags=unit -run TestAuditRepositoriesCommand ./internal/domain/commands/
+go test ./test/scripts/...          # the refresh's shell against local Git repositories
 ```
 
-Test files use `//go:build unit`, the `_test` package suffix (external tests), `t.Parallel()` on every top-level test function, BDD-style `// given / // when / // then` blocks, and the in-memory doubles in `test/domain/doubles/repositories/` rather than interface mocks.
+Test files use the `_test` package suffix (external tests), `t.Parallel()` on every top-level test function, BDD-style `// given / // when / // then` blocks, and the in-memory doubles in `test/domain/doubles/repositories/` rather than interface mocks. The harden-repos suites still carry `//go:build unit`; the `refresh-docs` suites are untagged, so a plain `go test ./...` finds them. `make test` covers only `cmd/` and `internal/`, so CI runs `test/scripts/` in the separate `refresh-tests` job.
 
 ## Conventions Specific to This Repo
 

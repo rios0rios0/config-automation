@@ -14,7 +14,7 @@ This file gives AI assistants (GitHub Copilot, Cursor, Claude Code) the minimum 
 
 ## Prompt audit and refresh model
 
-Before either phase, `scripts/agents_layout.py` moves each repository into the
+Before either phase, `refresh-docs layout` (`cmd/refresh-docs`) moves each repository into the
 `AGENTS.md` layout: `AGENTS.md` holds the instructions and each `CLAUDE.md` beside
 one contains only `@AGENTS.md`. A lone `CLAUDE.md` is renamed in its own commit so
 history follows the file; text a `CLAUDE.md` adds beside an existing `AGENTS.md` is

@@ -98,7 +98,7 @@ The supported files are:
 | Custom commands and prompts | `.claude/commands/**/*.md`, `.github/prompts/**/*.prompt.md` |
 | Project and contributor documentation | Root `README.md`; `CONTRIBUTING.md` at the root, `.github/`, or `docs/` |
 
-`scripts/refresh_scope.py` discovers tracked files before either phase. Its manifest
+`refresh-docs scope` (`cmd/refresh-docs`) discovers tracked files before either phase. Its manifest
 supplies the edit permissions, prompt inventory, drift detection, staging, and
 activity exclusions, so a change to any supported file can reach the same PR.
 Creation remains limited to the optional `AGENTS.md`,
@@ -144,7 +144,7 @@ it, or use `-f stale_after_days=0` for a full-fleet audit after a model or promp
 Copilot, and other agents. Every `CLAUDE.md` beside it contains only the line
 `@AGENTS.md`, the
 [import Claude Code documents](https://code.claude.com/docs/en/memory#share-one-file-with-other-coding-tools)
-for sharing one file with other tools. `scripts/agents_layout.py` brings each
+for sharing one file with other tools. `refresh-docs layout` brings each
 repository into that layout before the audit, so both Claude phases work on the
 files the PR proposes:
 
@@ -222,23 +222,24 @@ go run ./cmd/harden-repos --sonar-policy --dry-run --repo autobump
 ```
 config-automation/
 ├── cmd/
-│   └── harden-repos/               # CLI entry point + Dig wiring
+│   ├── harden-repos/               # CLI entry point + Dig wiring
+│   └── refresh-docs/               # `layout` and `scope` for the config-and-docs refresh
 ├── internal/
 │   ├── container.go                # top-level DI orchestrator
 │   ├── domain/
-│   │   ├── commands/               # one command per phase + --list-json + --dry-run
-│   │   ├── entities/               # Repository, AuditResult, ComplianceIssue, SonarProject, etc.
-│   │   └── repositories/           # four port interfaces (repos, security, branch protection, Sonar projects)
+│   │   ├── commands/               # one command per phase + --list-json + --dry-run, refresh scope and layout
+│   │   ├── entities/               # Repository, AuditResult, SonarProject, RefreshScope, AgentsLayoutReport, etc.
+│   │   └── repositories/           # ports: repos, security, branch protection, Sonar projects, Git working tree
 │   └── infrastructure/
-│       └── repositories/           # go-github and SonarQube Cloud adapters that implement the ports
+│       └── repositories/           # go-github, SonarQube Cloud, and git CLI adapters that implement the ports
 ├── test/
-│   └── domain/
-│       ├── builders/               # RepositoryBuilder, AuditResultBuilder
-│       └── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
+│   ├── domain/
+│   │   ├── builders/               # RepositoryBuilder, AuditResultBuilder
+│   │   ├── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
+│   │   └── fixtures/               # refresh paths shared by the scope and batch tests
+│   └── scripts/                    # Go tests that run the refresh's shell against local repositories
 ├── .github/workflows/              # four scheduled workflows that run this CLI
 └── scripts/
-    ├── agents_layout.py                   # AGENTS.md as the instruction file, CLAUDE.md as its import
-    ├── refresh_scope.py                   # shared per-repository file manifest
     ├── audit-and-refresh.sh               # read-only prompt audit followed by scoped edits
     └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
 ```
@@ -304,7 +305,7 @@ make build           # compile bin/harden-repos
 make test            # run unit tests (// given / // when / // then BDD style)
 make lint            # golangci-lint
 make sast            # full SAST suite via rios0rios0/pipelines
-python3 -m unittest discover -s test/scripts -v  # audit/refresh orchestration
+go test ./test/scripts/...  # audit/refresh orchestration against local repositories
 make run ARGS='--phase 1 --repo autobump'
 ```
 
