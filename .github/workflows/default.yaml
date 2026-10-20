@@ -38,7 +38,10 @@ jobs:
       - name: 'Run shell orchestration tests'
         run: 'go test -count=1 ./test/scripts/...'
 
+  # Releases ship harden-repos; refresh-docs is built from source by the refresh
+  # workflow, so the main package is pinned rather than auto-detected.
   default:
     uses: 'rios0rios0/pipelines/.github/workflows/go-binary.yaml@main'
     with:
-      binary_name: 'autobump'
+      binary_name: 'harden-repos'
+      binary_path: './cmd/harden-repos'
