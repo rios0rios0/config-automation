@@ -1,8 +1,10 @@
 Review the allowed configuration and documentation files against the actual code and the supplied prompt-audit findings. Update them only for meaningful factual drift or verified outdated prompting patterns. The host discovers exact paths with `scripts/refresh_scope.py` and appends them under `## Allowed files for this repository`; that manifest defines your edit scope.
 
+`AGENTS.md` is the instruction file every coding agent shares. Each `CLAUDE.md` beside one contains only the import line `@AGENTS.md`, which is how Claude Code loads it. The host keeps those one-line files and moves a legacy `CLAUDE.md` into `AGENTS.md` before you run; `## Guidance layout for this repository` below lists what it changed.
+
 The supported categories are:
 
-- Root and nested `CLAUDE.md` and `AGENTS.md`, including `.claude/CLAUDE.md`.
+- Root and nested `AGENTS.md`, `.claude/CLAUDE.md`, and any `CLAUDE.md` the host could not move.
 - `.github/copilot-instructions.md` and `.github/instructions/**/*.instructions.md`.
 - `.claude/rules/**/*.md`.
 - Markdown skill definitions and references under `.claude/skills/` and `.github/skills/`.
@@ -10,11 +12,11 @@ The supported categories are:
 - `.claude/commands/**/*.md` and `.github/prompts/**/*.prompt.md`.
 - Root `README.md` and `CONTRIBUTING.md`, plus `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md` when present.
 
-Existing files in these categories are eligible. The original three targets (`CLAUDE.md`, `.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md`) may also be created when useful, if the manifest permits them. Do not create other files or relocate existing instructions. Dependency/build/generated directories and symlinks are excluded. Files listed as skipped or absent from the manifest remain report-only.
+Existing files in these categories are eligible. Three targets (`AGENTS.md`, `.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md`), and an `AGENTS.md` that a one-line `CLAUDE.md` already imports, may also be created when useful, if the manifest permits them; the host adds the import for an `AGENTS.md` you create. Do not create other files or relocate existing instructions. Dependency/build/generated directories and symlinks are excluded. Files listed as skipped or absent from the manifest remain report-only.
 
 ## Your task
 
-1. **Read each file if it exists.** Start with whichever already exists. Create a file only if the manifest permits it and the repository clearly benefits from it.
+1. **Read each file if it exists,** starting with `AGENTS.md`. Create a file only if the manifest permits it and the repository clearly benefits from it.
 2. **Skim the repo** to gather truth:
    - `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` (recent `[Unreleased]` entries are often the most reliable signal of drift).
    - The manifest/build files that define the project's language and commands: `package.json`, `pyproject.toml`, `go.mod`, `build.gradle`, `Makefile`, `Taskfile.yaml`, `Dockerfile`.
@@ -43,7 +45,8 @@ block (except for the existing corrections allowed below). Respect deliberate
 directory or task overrides. Leave ambiguous conflicts, changes to safety rules,
 and findings in other files for human review; include their locations in your final
 response. Do not copy an out-of-scope instruction into an editable file to apply it
-indirectly. If there are no verified in-scope findings or factual changes, make no edits.
+indirectly. If there are no verified in-scope findings, factual changes, or host
+layout changes to finish, make no edits.
 
 ## Rules for human-facing documentation
 
@@ -72,20 +75,26 @@ and generated sections embedded in Markdown. Markdown references belonging to
 skills may be updated, but executable helpers and other non-Markdown assets are
 outside the edit scope. Keep historical decisions and intentional policy intact.
 
-## Rules for `CLAUDE.md`
+## Rules for `AGENTS.md`
+
+Codex, Cursor, GitHub Copilot, and other agents read `AGENTS.md` directly, and Claude Code reads it through the `CLAUDE.md` import, so write it for any agent.
 
 - **Use this banner** (exact text) when creating the root file; preserve the structure of existing nested files:
   ```
-  # CLAUDE.md
+  # AGENTS.md
 
-  This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+  This file provides guidance to AI coding agents (Claude Code, Codex, Cursor, GitHub Copilot) when working with code in this repository.
   ```
+- **Never edit or recreate a one-line `CLAUDE.md`.** It stays exactly `@AGENTS.md`; the host owns it and you hold no grant for it. Guidance only Claude Code needs goes into `AGENTS.md` under a short `## Claude Code` section, and only when it is load-bearing.
+- **Integrate migrated text.** When the host appended a former `CLAUDE.md` under `## Migrated from CLAUDE.md`, move each fact to the section where it belongs, drop what `AGENTS.md` already says, keep one copy of a generated block, and remove that heading. When the host renamed `CLAUDE.md`, correct prose that still calls the file `CLAUDE.md` or addresses only Claude Code. Never drop a load-bearing instruction to make the file shorter.
+- **Keep it lean.** Claude Code's guidance targets under 200 lines per instruction file, because longer files consume context and reduce adherence. Keep the facts an agent needs in every session: build, test, and lint commands (including how to run one test), architectural invariants and non-obvious coupling, and conventions a newcomer would get wrong. For each line, ask whether removing it would make an agent err; if not, cut it. Report a multi-step procedure or a rule for one part of the codebase as a candidate skill or path-scoped rule instead of creating one.
+- **Prefer portable wording.** `@path` imports resolve only in Claude Code; other agents read them as literal text. Keep an existing import that carries Claude-only context, but write what every agent needs into the file itself.
 
 ## Rules for `.github/copilot-instructions.md`
 
 - The file is loaded automatically by GitHub Copilot Chat and inlined into prompts. Keep it focused and under a few hundred lines.
 - No banner is required — start directly with content.
-- Content should overlap in substance with `CLAUDE.md` (both serve the same purpose for different assistants) but phrase it for GitHub Copilot's context model. Do not duplicate text verbatim — cross-reference or summarize.
+- Content should overlap in substance with `AGENTS.md` (both serve the same purpose for different assistants) but phrase it for GitHub Copilot's context model. Do not duplicate text verbatim — cross-reference or summarize.
 
 ## Rules for `.github/skills/code-review/SKILL.md`
 
@@ -115,7 +124,7 @@ outside the edit scope. Keep historical decisions and intentional policy intact.
 - Include **build / test / lint commands** that are commonly used, including how to run a single test.
 - Include **conventions specific to this repo** — things a reader would get wrong by following generic best practices.
 - **The block between `<!-- chlog:start -->` and `<!-- chlog:end -->` in an instruction file is generated by `chlog ai setup`.** Leave it exactly as it is, with two exceptions. First, both `chlog new` examples in it must show the body as `--body '<past-tense description>'` — past tense, in single quotes; if either still shows `<imperative description>`, a bare `<description>`, or the body in double quotes, change that one token and nothing else: every changelog body in this fleet is written in simple past tense (see the Documentation & Change Control guide), the imperative placeholder contradicted the rule stated a few lines above the block, and a body carries backticks that a double-quoted shell argument would command-substitute. Second, the line ``- Write an apostrophe inside the single-quoted body as `'\''`.`` must sit right before the `- Valid kinds:` line; add it if it is missing, because bodies here carry possessives and a bare apostrophe ends a single-quoted shell word. Either correction counts as drift on its own. Every other `chlog new` example these files carry — hand-written prose outside the block, and the code-review skill's — must use the same single-quoted `--body '…'` form; convert a double-quoted one whenever you are editing that file anyway.
-- **Never write a credential-shaped literal into any file you produce.** Quoting a vendor prefix is allowed only while it stays — like every prefix in the approved wording above — **deliberately truncated**, stopped short of what the scanner's rules match; naming the vendor in words instead is always safe. What is forbidden is *completing* one: never extend a prefix with body characters, and never write a key banner or a token in the form the rules match. Where an example value is needed, use an inert placeholder such as `fixture-token-placeholder`. Every repository in the fleet runs the shared `sast:gitleaks` stage, and several rules in the GitLab-customised rule set of its second pass match a vendor prefix or a key banner **on its own**, with no body check — so a sentence that quotes one becomes a finding itself, which is how a paragraph advising against committing secrets turned pipelines red across the fleet on 2026-08-26. On `main` that scan walks the whole history reachable from `HEAD`, so rewording the sentence later does not clear it: once the text is committed only a `.gitleaksignore` fingerprint clears it, and you are not granted the tool to write one. Concretely, never emit the hyphenated Slack bot-token prefix (`xox`, one letter, a hyphen — it matches with an empty body), a vendor prefix followed by body characters (GitHub `ghp_`, OpenAI `sk-`, AWS `AKIA`), the dashed `BEGIN …` banner of a PEM private key, or a JWT-shaped string. This is the convention recorded in `global/scripts/tools/README.md` of `rios0rios0/pipelines`, and it holds for `CLAUDE.md` and `.github/copilot-instructions.md` exactly as much as for the code-review skill.
+- **Never write a credential-shaped literal into any file you produce.** Quoting a vendor prefix is allowed only while it stays — like every prefix in the approved wording above — **deliberately truncated**, stopped short of what the scanner's rules match; naming the vendor in words instead is always safe. What is forbidden is *completing* one: never extend a prefix with body characters, and never write a key banner or a token in the form the rules match. Where an example value is needed, use an inert placeholder such as `fixture-token-placeholder`. Every repository in the fleet runs the shared `sast:gitleaks` stage, and several rules in the GitLab-customised rule set of its second pass match a vendor prefix or a key banner **on its own**, with no body check — so a sentence that quotes one becomes a finding itself, which is how a paragraph advising against committing secrets turned pipelines red across the fleet on 2026-08-26. On `main` that scan walks the whole history reachable from `HEAD`, so rewording the sentence later does not clear it: once the text is committed only a `.gitleaksignore` fingerprint clears it, and you are not granted the tool to write one. Concretely, never emit the hyphenated Slack bot-token prefix (`xox`, one letter, a hyphen — it matches with an empty body), a vendor prefix followed by body characters (GitHub `ghp_`, OpenAI `sk-`, AWS `AKIA`), the dashed `BEGIN …` banner of a PEM private key, or a JWT-shaped string. This is the convention recorded in `global/scripts/tools/README.md` of `rios0rios0/pipelines`, and it holds for `AGENTS.md` and `.github/copilot-instructions.md` exactly as much as for the code-review skill.
 
 ## What NOT to include
 
@@ -127,7 +136,7 @@ outside the edit scope. Keep historical decisions and intentional policy intact.
 
 ## Recording the change
 
-Record the refresh **if and only if you modified an allowed documentation or instruction file.** How you record it depends on which changelog convention the repository follows — the two are mutually exclusive, and the host workflow tells you which one applies in the `## Changelog convention for this repository` section appended below this prompt. It also grants you only the tool the applicable convention needs, so the wrong one is not merely discouraged, it is impossible.
+Record the refresh **if and only if you modified an allowed documentation or instruction file, or the guidance layout section lists host changes.** A host move of `CLAUDE.md` into `AGENTS.md` is part of this refresh: record it even if you edit nothing else, for example as `moved the agent instructions from \`CLAUDE.md\` to \`AGENTS.md\`, keeping a \`CLAUDE.md\` that imports it`. How you record it depends on which changelog convention the repository follows — the two are mutually exclusive, and the host workflow tells you which one applies in the `## Changelog convention for this repository` section appended below this prompt. It also grants you only the tool the applicable convention needs, so the wrong one is not merely discouraged, it is impossible.
 
 ### If the repository uses chlog
 
@@ -136,7 +145,7 @@ A repository uses [chlog](https://github.com/luizjhonata/chlog) when `.chlog.yam
 Create one fragment per entry by running `chlog new` from the repository root. It is the only command you are granted, and no tool you hold can write into `.changes/unreleased/` by hand:
 
 ```
-chlog new --kind Changed --body 'refreshed `CLAUDE.md` to document the new `make test-integration` target'
+chlog new --kind Changed --body 'refreshed `AGENTS.md` to document the new `make test-integration` target'
 ```
 
 - `--kind` — `Changed` when you edited a file that already existed, `Added` when you created one. If `.chlog.yaml` defines a `kinds:` list, the value must be one of its `label:` entries.
@@ -147,12 +156,12 @@ Two entries of different kinds (you created one file and edited another) mean tw
 
 ### If the repository does not use chlog
 
-Add a short entry to `CHANGELOG.md` under the `[Unreleased]` section. Use `### Changed` for edits to existing files and `### Added` if you created one of them. Write the entry in simple past tense, starting with a lowercase verb, and wrap file names in backticks — example: `- refreshed \`CLAUDE.md\` to document the new \`make test-integration\` target`. If the `[Unreleased]` section does not exist, add it immediately above the most recent version heading. If `CHANGELOG.md` does not exist in the repo, skip this step — do not create one.
+Add a short entry to `CHANGELOG.md` under the `[Unreleased]` section. Use `### Changed` for edits to existing files and `### Added` if you created one of them. Write the entry in simple past tense, starting with a lowercase verb, and wrap file names in backticks — example: `- refreshed \`AGENTS.md\` to document the new \`make test-integration\` target`. If the `[Unreleased]` section does not exist, add it immediately above the most recent version heading. If `CHANGELOG.md` does not exist in the repo, skip this step — do not create one.
 
 ## Commit discipline
 
 - If and only if you modify a file in the supplied manifest, the host workflow will detect the diff and open a PR. You do not need to run git commands yourself.
-- If all allowed files are accurate and have no verified audit findings (or should not be created), do nothing. Weekly no-op runs are expected and correct. A changelog fragment or `CHANGELOG.md` entry on its own never opens a PR, so never write one for a refresh you did not make.
+- If all allowed files are accurate, have no verified audit findings (or should not be created), and the host lists no layout changes, do nothing. Weekly no-op runs are expected and correct. A changelog fragment or `CHANGELOG.md` entry on its own never opens a PR, so never write one for a refresh that did not happen.
 - Edit only files in the supplied manifest and — in a repository without chlog — `CHANGELOG.md`; in a chlog repository the only changelog action is running `chlog new`. Never run destructive commands. Never push, tag, or merge.
 
 ## Tone

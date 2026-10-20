@@ -15,7 +15,7 @@ The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-s
 ## Features
 
 - **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags, and GitHub Actions disabled on forks).
-- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork non-archived repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. The refresh covers existing assistant instructions, skills and references, agents, custom commands, README, and CONTRIBUTING; exact paths are discovered separately for each repository.
+- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork non-archived repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. `AGENTS.md` is each repository's instruction file, with a one-line `CLAUDE.md` importing it; the refresh moves legacy `CLAUDE.md` guidance into that layout, then audits and refines `AGENTS.md` alongside existing skills and references, agents, custom commands, README, and CONTRIBUTING. Exact paths are discovered separately for each repository.
 - **Sonar analysis policy** — daily job that applies the fleet's SonarQube Cloud analysis policy to every project of the `rios0rios0` organization: it adds the `sonar.issue.ignore.multicriteria` pairs the fleet needs and triages the findings those rules already raised. Today the policy silences `githubactions:S7637` ("use a full commit SHA") on YAML, because every repository calls the shared CI as `uses: rios0rios0/pipelines/.github/workflows/<name>.yaml@main` and that floating reference is deliberate.
 - **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes any missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). Delegates detection to the single-sourced pipelines primitive and reuses the same per-owner refresh PATs — no new secret required.
 
@@ -91,7 +91,7 @@ The supported files are:
 
 | Category | Existing paths included |
 |---|---|
-| Shared and Claude instructions | Root and nested `AGENTS.md` and `CLAUDE.md`, including `.claude/CLAUDE.md` |
+| Agent instructions | Root and nested `AGENTS.md`, `.claude/CLAUDE.md`, and a `CLAUDE.md` that still holds instructions |
 | Scoped rules | `.claude/rules/**/*.md`, `.github/instructions/**/*.instructions.md`, `.github/copilot-instructions.md` |
 | Skills and references | Markdown under `.claude/skills/` and `.github/skills/` |
 | Agent definitions | Markdown under `.claude/agents/` and `.github/agents/` |
@@ -101,7 +101,7 @@ The supported files are:
 `scripts/refresh_scope.py` discovers tracked files before either phase. Its manifest
 supplies the edit permissions, prompt inventory, drift detection, staging, and
 activity exclusions, so a change to any supported file can reach the same PR.
-Creation remains limited to the original optional `CLAUDE.md`,
+Creation remains limited to the optional `AGENTS.md`,
 `.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md` targets.
 The job excludes symlinks and dependency/build/generated directories, and reports
 filenames containing control characters or permission-pattern delimiters as skipped.
@@ -109,19 +109,27 @@ Skill/agent metadata, permissions, model pins, generated content, and deliberate
 scope overrides remain intact; ambiguous changes stay in the report.
 
 [Anthropic's command reference](https://code.claude.com/docs/en/commands) documents
-`/checkup prompt-audit` and `/doctor prompt-audit` from Claude Code v2.1.283;
-`/claude-api prompt-audit` is also available. These are session commands, distinct
-from the terminal's `claude doctor` installation check.
+`/doctor prompt-audit`, aliased as `/checkup prompt-audit`, from Claude Code v2.1.283;
+[the audit covers](https://code.claude.com/docs/en/memory#audit-your-instruction-files)
+`CLAUDE.md` and `AGENTS.md` files plus rules, skills, commands, and subagents. These
+are session commands, distinct from the terminal's `claude doctor` installation check.
 [Print mode supports skill invocations](https://code.claude.com/docs/en/headless).
 The workflow installs Claude Code from the `>=2.1.283` npm range.
 
 Both phases use the `CLAUDE_MODEL` GitHub Actions repository variable, falling back
-to [`claude-opus-5-5`](https://platform.claude.com/docs/en/models/opus-5-5/overview).
-Set it with:
+to [`claude-opus-5-5`](https://platform.claude.com/docs/en/models/opus-5-5/overview),
+and the `CLAUDE_EFFORT` variable (`low`, `medium`, `high`, `xhigh`, or `max`), falling
+back to `high`: Opus 5.5 otherwise runs at
+[`medium` effort](https://code.claude.com/docs/en/model-config#adjust-effort-level) in
+Claude Code. Set them with:
 
 ```bash
 gh variable set CLAUDE_MODEL -R rios0rios0/config-automation --body 'claude-opus-5-5'
+gh variable set CLAUDE_EFFORT -R rios0rios0/config-automation --body 'high'
 ```
+
+Neither phase loads the target repository's settings, hooks, or MCP servers, and both
+run with `--permission-mode dontAsk`, so anything outside their grants is denied.
 
 A README alone does not count as existing assistant guidance, so it cannot suppress
 a repository's initial guidance refresh.
@@ -129,6 +137,31 @@ a repository's initial guidance refresh.
 `max_turns` applies separately to each phase (default 50 each). The existing
 activity gate still skips quiet repositories; a single-repository dispatch bypasses
 it, or use `-f stale_after_days=0` for a full-fleet audit after a model or prompt change.
+
+### `AGENTS.md` layout
+
+`AGENTS.md` is the default instruction file, read directly by Codex, Cursor, GitHub
+Copilot, and other agents. Every `CLAUDE.md` beside it contains only the line
+`@AGENTS.md`, the
+[import Claude Code documents](https://code.claude.com/docs/en/memory#share-one-file-with-other-coding-tools)
+for sharing one file with other tools. `scripts/agents_layout.py` brings each
+repository into that layout before the audit, so both Claude phases work on the
+files the PR proposes:
+
+| Found | Result |
+|---|---|
+| `CLAUDE.md` only | Renamed to `AGENTS.md` in its own commit (history follows the file), banner updated, `CLAUDE.md` recreated as the import |
+| `CLAUDE.md` and `AGENTS.md` | `CLAUDE.md` text is appended under `## Migrated from CLAUDE.md` for the refresh to integrate, unless `AGENTS.md` already holds it line for line; `CLAUDE.md` becomes the import |
+| `AGENTS.md` only, or a symlink between the two | `CLAUDE.md` written as the import file |
+| `CLAUDE.md` importing a missing `AGENTS.md` | Reported; the refresh may create `AGENTS.md` |
+| Any other symlink, ignored path, or non-UTF-8 file | Reported; neither file of that pair is changed |
+
+`.claude/CLAUDE.md` and dependency/build directories are left alone. The workflow
+owns the one-line `CLAUDE.md` files: they are staged and drift-checked but never
+granted to Claude. After the refresh, the same script adds the import for an
+`AGENTS.md` Claude created. A layout change alone opens the PR, Claude records it in
+the repository's changelog, and the activity gate never skips a repository whose
+layout it just changed.
 
 ## Usage
 
@@ -204,6 +237,7 @@ config-automation/
 │       └── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
 ├── .github/workflows/              # four scheduled workflows that run this CLI
 └── scripts/
+    ├── agents_layout.py                   # AGENTS.md as the instruction file, CLAUDE.md as its import
     ├── refresh_scope.py                   # shared per-repository file manifest
     ├── audit-and-refresh.sh               # read-only prompt audit followed by scoped edits
     └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
@@ -261,7 +295,7 @@ files, which a `sonar.exclusions` entry would have silenced too. Third-party act
 pinned to a full commit SHA — that policy is enforced by the `pipelines` scheduled dependency job,
 which fails when any pin goes stale, not by S7637.
 
-See `CLAUDE.md` for invariants and conventions.
+See `AGENTS.md` for invariants and conventions.
 
 ## Development
 

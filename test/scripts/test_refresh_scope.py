@@ -41,10 +41,11 @@ class RefreshScopeTest(unittest.TestCase):
         subprocess.run(["git", "init", "--quiet", str(self.root)], check=True)
 
     def track(self, paths):
-        for path in paths:
+        contents = paths if isinstance(paths, dict) else dict.fromkeys(paths, "# Documentation\n")
+        for path, content in contents.items():
             target = self.root / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("# Documentation\n")
+            target.write_text(content)
         # The fixture explicitly represents tracked files, even when a user's
         # global ignore rules would normally hide a .claude directory.
         subprocess.run(["git", "-C", str(self.root), "add", "--force", "--", "."], check=True)
@@ -57,11 +58,57 @@ class RefreshScopeTest(unittest.TestCase):
         self.assertEqual(scope["allowed_tools"][3:], [f"Edit(/{p})" for p in scope["paths"]])
         self.assertTrue(scope["has_guidance"])
 
-    def test_only_original_three_targets_can_be_created(self):
+    def test_only_three_targets_are_created_while_claude_md_stays_host_managed(self):
         scope = SCOPE.discover(self.root)
-        self.assertEqual(set(scope["paths"]), set(SCOPE.CREATABLE))
+        self.assertEqual(set(scope["creatable"]), set(SCOPE.CREATABLE))
+        self.assertIn("AGENTS.md", scope["creatable"])
+        self.assertEqual(scope["managed"], ["CLAUDE.md"])
+        self.assertEqual(set(scope["paths"]), set(SCOPE.CREATABLE) | {"CLAUDE.md"})
+        self.assertNotIn("Edit(/CLAUDE.md)", scope["allowed_tools"])
         self.assertEqual(scope["existing"], [])
         self.assertFalse(scope["has_guidance"])
+
+    def test_should_never_grant_pointers_when_claude_md_only_imports_agents_md(self):
+        # given
+        self.track({"AGENTS.md": "# Guidance\n", "CLAUDE.md": "@AGENTS.md\n",
+                    "packages/api/AGENTS.md": "# API\n", "packages/api/CLAUDE.md": "@./AGENTS.md\n",
+                    "tools/CLAUDE.md": "@AGENTS.md\n", ".claude/CLAUDE.md": "@AGENTS.md\n"})
+
+        # when
+        scope = SCOPE.discover(self.root)
+
+        # then
+        self.assertEqual(scope["managed"], ["CLAUDE.md", "packages/api/CLAUDE.md", "tools/CLAUDE.md"])
+        self.assertIn("tools/AGENTS.md", scope["creatable"])
+        self.assertNotIn("AGENTS.md", scope["creatable"])
+        self.assertIn(".claude/CLAUDE.md", scope["existing"])
+        for path in scope["managed"]:
+            self.assertIn(path, scope["paths"])
+            self.assertNotIn(f"Edit(/{path})", scope["allowed_tools"])
+        self.assertIn("Edit(/tools/AGENTS.md)", scope["allowed_tools"])
+        self.assertTrue(scope["has_guidance"])
+
+    def test_should_not_count_a_pointer_as_guidance_when_agents_md_is_missing(self):
+        # given
+        self.track({"README.md": "# Read me\n", "CLAUDE.md": "@AGENTS.md\n"})
+
+        # when
+        scope = SCOPE.discover(self.root)
+
+        # then
+        self.assertFalse(scope["has_guidance"])
+        self.assertIn("AGENTS.md", scope["creatable"])
+
+    def test_should_not_offer_agents_md_when_the_repository_ignores_it(self):
+        # given
+        self.track({"README.md": "# Read me\n", ".gitignore": "AGENTS.md\n"})
+
+        # when
+        scope = SCOPE.discover(self.root)
+
+        # then
+        self.assertNotIn("AGENTS.md", scope["creatable"])
+        self.assertNotIn("Edit(/AGENTS.md)", scope["allowed_tools"])
 
     def test_readme_does_not_count_as_bootstrap_guidance(self):
         self.track(["README.md", "CONTRIBUTING.md"])
@@ -69,8 +116,9 @@ class RefreshScopeTest(unittest.TestCase):
 
     def test_untracked_new_categories_are_not_granted(self):
         self.track(["README.md"])
-        (self.root / "AGENTS.md").write_text("untracked instructions")
-        self.assertNotIn("AGENTS.md", SCOPE.discover(self.root)["paths"])
+        (self.root / ".claude/rules").mkdir(parents=True)
+        (self.root / ".claude/rules/new.md").write_text("untracked instructions")
+        self.assertNotIn(".claude/rules/new.md", SCOPE.discover(self.root)["paths"])
 
     def test_symlinks_and_symlinked_creation_parents_are_excluded(self):
         self.track(["README.md"])
@@ -79,7 +127,7 @@ class RefreshScopeTest(unittest.TestCase):
         (self.root / ".github").symlink_to("outside", target_is_directory=True)
         subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
         scope = SCOPE.discover(self.root)
-        self.assertEqual(scope["paths"], ["README.md"])
+        self.assertEqual(scope["paths"], ["AGENTS.md", "README.md"])
         self.assertIn("CLAUDE.md", scope["skipped"])
 
     def test_permission_pattern_and_delimiter_characters_are_not_granted(self):
@@ -88,7 +136,7 @@ class RefreshScopeTest(unittest.TestCase):
         self.track(paths)
         scope = SCOPE.discover(self.root)
         self.assertEqual(set(scope["skipped"]), set(paths))
-        self.assertEqual(set(scope["paths"]), set(SCOPE.CREATABLE))
+        self.assertEqual(set(scope["paths"]), set(SCOPE.CREATABLE) | {"CLAUDE.md"})
 
 
 if __name__ == "__main__":

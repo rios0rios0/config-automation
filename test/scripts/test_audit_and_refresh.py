@@ -30,7 +30,7 @@ class AuditAndRefreshTest(unittest.TestCase):
         if audit_result is None:
             audit_result = json.dumps({
                 "type": "result", "subtype": "success", "is_error": False,
-                "result": "CLAUDE.md:4: stale command; proposed diff: replace it",
+                "result": "AGENTS.md:4: stale command; proposed diff: replace it",
             })
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -40,15 +40,18 @@ class AuditAndRefreshTest(unittest.TestCase):
             scope = root / "scope.json"
             scope.write_text(json.dumps({
                 "existing": ["README.md", "packages/api/AGENTS.md", ".claude/skills/check/references/usage.md"],
-                "creatable": ["CLAUDE.md"],
-                "allowed_tools": ["Read", "Grep", "Glob", "Edit(/CLAUDE.md)",
+                "creatable": ["AGENTS.md"],
+                "managed": ["CLAUDE.md", "packages/api/CLAUDE.md"],
+                "allowed_tools": ["Read", "Grep", "Glob", "Edit(/AGENTS.md)",
                                   "Edit(/README.md)", "Edit(/packages/api/AGENTS.md)",
                                   "Edit(/.claude/skills/check/references/usage.md)"],
             }))
             calls = root / "calls.jsonl"
             scratch = root / "scratch"
             scratch.mkdir()
-            env = dict(os.environ, PATH=f"{root}{os.pathsep}{os.environ['PATH']}",
+            # An effort set in the caller's shell must not leak into the defaults.
+            env = {key: value for key, value in os.environ.items() if key != "CLAUDE_EFFORT"}
+            env.update(PATH=f"{root}{os.pathsep}{os.environ['PATH']}",
                        TMPDIR=str(scratch), CALLS=str(calls),
                        AUDIT_RESULT=audit_result, **overrides)
             result = subprocess.run(
@@ -67,20 +70,38 @@ class AuditAndRefreshTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         audit, refresh = [call["args"] for call in calls]
         self.assertTrue(audit[1].startswith("/checkup prompt-audit .\n"))
+        self.assertIn("only the import line `@AGENTS.md`", audit[1])
+        self.assertIn("under 200 lines", audit[1])
         self.assertEqual(audit[audit.index("--tools") + 1], "Read,Grep,Glob")
         self.assertEqual(audit[audit.index("--allowedTools") + 1], "Read,Grep,Glob")
-        self.assertEqual(audit[audit.index("--setting-sources") + 1], "")
-        self.assertIn("--strict-mcp-config", audit)
-        self.assertEqual(audit[audit.index("--permission-mode") + 1], "dontAsk")
-        self.assertIn("CLAUDE.md:4: stale command", refresh[1])
+        self.assertEqual(refresh[refresh.index("--tools") + 1], "Read,Grep,Glob,Edit,Write")
+        self.assertIn("AGENTS.md:4: stale command", refresh[1])
         self.assertIn("review data", refresh[1])
         self.assertIn("## Allowed files for this repository", refresh[1])
         self.assertIn("packages/api/AGENTS.md", refresh[1])
+        self.assertNotIn("packages/api/CLAUDE.md", refresh[1], "host-managed pointer offered for edits")
         for call in calls:
             args = call["args"]
             self.assertEqual(args[args.index("--model") + 1], "claude-opus-5-5")
+            self.assertEqual(args[args.index("--effort") + 1], "high")
             self.assertEqual(args[args.index("--max-turns") + 1], "7")
+            # Neither phase may run the target repository's hooks or MCP servers.
+            self.assertEqual(args[args.index("--setting-sources") + 1], "")
+            self.assertIn("--strict-mcp-config", args)
+            self.assertEqual(args[args.index("--permission-mode") + 1], "dontAsk")
             self.assertEqual(call["stdin"], "", "CLI drained the batch's stdin")
+
+    def test_should_run_both_phases_at_the_configured_effort_when_it_is_overridden(self):
+        # given
+        effort = {"CLAUDE_EFFORT": "xhigh"}
+
+        # when
+        result, calls = self.run_helper(**effort)
+
+        # then
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for call in calls:
+            self.assertEqual(call["args"][call["args"].index("--effort") + 1], "xhigh")
 
     def test_changelog_grants_remain_mutually_exclusive(self):
         for extra in ("", ",Bash(chlog new:*)", ",Edit(/CHANGELOG.md)"):
@@ -89,9 +110,11 @@ class AuditAndRefreshTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 args = calls[1]["args"]
                 self.assertEqual(args[args.index("--allowedTools") + 1],
-                                 "Read,Grep,Glob,Edit(/CLAUDE.md),Edit(/README.md),"
+                                 "Read,Grep,Glob,Edit(/AGENTS.md),Edit(/README.md),"
                                  "Edit(/packages/api/AGENTS.md),"
                                  "Edit(/.claude/skills/check/references/usage.md)" + extra)
+                # Bash exists only where `chlog new` is the granted command.
+                self.assertEqual(args[args.index("--tools") + 1].endswith(",Bash"), "Bash(" in extra)
 
     def test_failed_audit_preserves_diagnostics_and_does_not_refresh(self):
         for diagnostic in ("monthly usage limit", "safeguards flagged", "network error"):

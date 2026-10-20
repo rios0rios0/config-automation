@@ -37,7 +37,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    chlog new --kind Added --body 'added the thing that was not there before'
    ```
    Write it in the same commit that introduces the change.
-7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `CLAUDE.md` and `README.md` to match.
+7. If your change alters the compliance policy (branch protection, rulesets, repo settings), update `AGENTS.md` and `README.md` to match.
 8. Commit following the [commit conventions](https://github.com/rios0rios0/guide/wiki/Git-Flow).
 9. Open a pull request against `main`.
 
@@ -67,6 +67,9 @@ manifest drives exact edit grants, the prompt inventory, drift detection, stagin
 and the activity gate. Extend discovery and its tests together when adding a file
 category, and update `scripts/refresh_config_and_docs_prompt.md` with the relevant
 editing rules. Preserve frontmatter, model/tool configuration, and generated content.
+`scripts/agents_layout.py` runs before discovery and keeps `AGENTS.md` as the
+instruction file with a one-line `CLAUDE.md` importing it; change it together with
+`test/scripts/test_agents_layout.py`.
 
 Run the offline tests before a workflow change:
 
@@ -76,8 +79,9 @@ python3 -m unittest discover -s test/scripts -v
 
 These tests execute the batch shell against local Git repositories with Claude
 and GitHub CLI doubles. They cover every supported category reaching a single PR,
-no-op runs, tracked deletions, failures that must not abort the batch, and the
-activity gate excluding refresh output without skipping initial guidance.
+the `AGENTS.md` migration and its separate rename commit, no-op runs, tracked
+deletions, failures that must not abort the batch, and the activity gate excluding
+refresh output without skipping initial guidance or a pending migration.
 
 GitHub Actions workflows can only be fully exercised by running them. For the config-and-docs refresh, trigger a single-repo dispatch against a low-risk target after merge:
 
