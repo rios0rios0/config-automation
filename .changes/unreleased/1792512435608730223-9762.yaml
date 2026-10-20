@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed the refresh treating Claude''s weekly usage limit as an ordinary failure: like the monthly cap, it now skips the rest of the batch instead of running every remaining repository into the same limit'
+time: '2026-10-20T16:07:15.608626685Z'
