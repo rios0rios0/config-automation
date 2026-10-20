@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'replaced Uber Dig with a typed composition root in `cmd/harden-repos/container.go`: the commands and adapters are built by explicit constructor calls the compiler checks, and the `go.uber.org/dig` dependency is gone'
+time: '2026-10-20T16:12:29.717586801Z'

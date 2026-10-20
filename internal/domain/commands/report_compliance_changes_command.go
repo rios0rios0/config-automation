@@ -11,7 +11,7 @@ import (
 // can see what the previous mutation phases actually changed.
 type ReportComplianceChangesCommand struct{}
 
-// NewReportComplianceChangesCommand is the Dig-injectable constructor.
+// NewReportComplianceChangesCommand is the constructor the composition root calls.
 func NewReportComplianceChangesCommand() *ReportComplianceChangesCommand {
 	return &ReportComplianceChangesCommand{}
 }

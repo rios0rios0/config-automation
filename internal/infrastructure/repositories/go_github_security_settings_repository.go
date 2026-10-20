@@ -22,7 +22,7 @@ type GoGithubSecuritySettingsRepository struct {
 	client *github.Client
 }
 
-// NewGoGithubSecuritySettingsRepository is the Dig-injectable constructor.
+// NewGoGithubSecuritySettingsRepository is the constructor the composition root calls.
 func NewGoGithubSecuritySettingsRepository(client *github.Client) *GoGithubSecuritySettingsRepository {
 	return &GoGithubSecuritySettingsRepository{client: client}
 }

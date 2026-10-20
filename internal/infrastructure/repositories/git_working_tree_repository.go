@@ -33,7 +33,7 @@ const (
 // with the git CLI and the local filesystem.
 type GitWorkingTreeRepository struct{}
 
-// NewGitWorkingTreeRepository is the Dig-injectable constructor.
+// NewGitWorkingTreeRepository is the constructor the composition root calls.
 func NewGitWorkingTreeRepository() *GitWorkingTreeRepository {
 	return &GitWorkingTreeRepository{}
 }

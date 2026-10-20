@@ -16,7 +16,7 @@ type ApplyBranchProtectionCommand struct {
 	branchProtectionRepo repositories.BranchProtectionsRepository
 }
 
-// NewApplyBranchProtectionCommand is the Dig-injectable constructor.
+// NewApplyBranchProtectionCommand is the constructor the composition root calls.
 func NewApplyBranchProtectionCommand(
 	branchProtectionRepo repositories.BranchProtectionsRepository,
 ) *ApplyBranchProtectionCommand {

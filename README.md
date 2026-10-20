@@ -222,10 +222,9 @@ go run ./cmd/harden-repos --sonar-policy --dry-run --repo autobump
 ```
 config-automation/
 ├── cmd/
-│   ├── harden-repos/               # CLI entry point + Dig wiring
+│   ├── harden-repos/               # CLI entry point + composition root (container.go)
 │   └── refresh-docs/               # `layout` and `scope` for the config-and-docs refresh
 ├── internal/
-│   ├── container.go                # top-level DI orchestrator
 │   ├── domain/
 │   │   ├── commands/               # one command per phase + --list-json + --dry-run, refresh scope and layout
 │   │   ├── entities/               # Repository, AuditResult, SonarProject, RefreshScope, AgentsLayoutReport, etc.

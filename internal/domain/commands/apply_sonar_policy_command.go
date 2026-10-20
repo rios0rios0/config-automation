@@ -31,7 +31,7 @@ type ApplySonarPolicyCommand struct {
 	sonarRepo repositories.SonarProjectsRepository
 }
 
-// NewApplySonarPolicyCommand is the Dig-injectable constructor.
+// NewApplySonarPolicyCommand is the constructor the composition root calls.
 func NewApplySonarPolicyCommand(sonarRepo repositories.SonarProjectsRepository) *ApplySonarPolicyCommand {
 	return &ApplySonarPolicyCommand{sonarRepo: sonarRepo}
 }

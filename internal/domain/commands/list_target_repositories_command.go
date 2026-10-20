@@ -15,7 +15,7 @@ type ListTargetRepositoriesCommand struct {
 	reposRepo repositories.Repository
 }
 
-// NewListTargetRepositoriesCommand is the Dig-injectable constructor.
+// NewListTargetRepositoriesCommand is the constructor the composition root calls.
 func NewListTargetRepositoriesCommand(reposRepo repositories.Repository) *ListTargetRepositoriesCommand {
 	return &ListTargetRepositoriesCommand{reposRepo: reposRepo}
 }

@@ -59,13 +59,13 @@ Clean Architecture with `domain` (contracts) / `infrastructure` (implementations
 ```
 config-automation/
 ├── cmd/
-│   └── harden-repos/               # CLI entry point + Uber Dig wiring (`main.go`, `dig.go`)
+│   ├── harden-repos/               # CLI entry point + composition root (`main.go`, `container.go`)
+│   └── refresh-docs/               # `layout` and `scope` for the config-and-docs refresh
 ├── internal/
-│   ├── container.go                # top-level DI orchestrator
 │   ├── domain/
 │   │   ├── commands/               # one command per phase + `--list-json` + `--dry-run`
 │   │   ├── entities/               # `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`, `SonarProject`, `compliance_policy.go`, `sonar_analysis_policy.go`
-│   │   └── repositories/           # four port interfaces (repos, security, branch protection, Sonar projects)
+│   │   └── repositories/           # ports: repos, security, branch protection, Sonar projects, Git working tree
 │   └── infrastructure/
 │       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v75`, plus `SonarCloudSonarProjectsRepository` over the SonarQube Cloud Web API
 ├── test/
@@ -133,7 +133,7 @@ Workflow secrets, one fine-grained PAT per owner shared by the three GitHub work
 
 ## Conventions
 
-- **Go style** — `snake_case` file names, one-letter receiver names (`c` for `Command`, `r` for `Repository`), Uber Dig for DI, Logrus for logging, testify for assertions, no framework tags on entities.
+- **Go style** — `snake_case` file names, one-letter receiver names (`c` for `Command`, `r` for `Repository`), manual constructor injection in each `cmd/<app>/container.go` (no Dig), Logrus for logging, testify for assertions, no framework tags on entities.
 - **Tests** — no build tag on unit tests (`go test ./...` runs them all), `_test` package suffix, `t.Parallel()` on every top-level test function, BDD `// given` / `// when` / `// then` blocks. Prefer in-memory doubles over `testify/mock`. Builders live under `test/domain/builders/`.
 - **YAML files** — `.yaml` (never `.yml`); single-quote string values except where variable interpolation requires double quotes; never quote booleans or numbers.
 - **Commits** — `type(SCOPE): message` in simple past tense, no trailing period. See `.claude/rules/git-flow.md` in the user's global rules.
