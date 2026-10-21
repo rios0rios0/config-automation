@@ -22,6 +22,34 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-21
+
+### Added
+
+- added an `AGENTS.md` layout step to the weekly refresh: a repository's `CLAUDE.md` moves into `AGENTS.md` (a rename is committed on its own so history follows the file) and becomes the one-line `@AGENTS.md` import, text a `CLAUDE.md` adds beside an existing `AGENTS.md` is appended for the refresh to integrate, and a symlink between the two becomes the import file
+- added the `CLAUDE_EFFORT` repository variable for the effort of both refresh phases, defaulting to `high` because Opus 5.5 otherwise runs at `medium` in Claude Code
+
+### Changed
+
+- changed the Go module `golang.org/x/sys` from `v0.48.0` to `v0.49.0`
+- changed the Go version from `1.27.1` to `1.27.3`
+- changed the unit tests to carry no build tag, so a plain `go test ./...` runs every suite; their first lint also moved two assertions inside HTTP test handlers from `require` to `assert`, since `require` cannot stop a test from the server's goroutine
+- changed the weekly refresh to create root `AGENTS.md` instead of `CLAUDE.md`, to keep every `CLAUDE.md` beside an `AGENTS.md` as an import Claude has no grant to edit, to never skip a quiet repository whose layout it just migrated, and to audit and refine `AGENTS.md` against Claude Code's guidance for instruction files
+- moved the agent instructions from `CLAUDE.md` to `AGENTS.md`, keeping a `CLAUDE.md` that only imports it
+- replaced Uber Dig with a typed composition root in `cmd/harden-repos/container.go`: the commands and adapters are built by explicit constructor calls the compiler checks, and the `go.uber.org/dig` dependency is gone
+- rewrote the refresh's scope discovery and `AGENTS.md` layout helpers, with every test of the refresh, in Go: `refresh-docs scope` and `refresh-docs layout` replace the Python scripts, so the repository no longer needs Python
+
+### Fixed
+
+- fixed releases publishing the `harden-repos` binary under the name `autobump`, left over from the workflow template, and pinned its main package now that `cmd/refresh-docs` is a second one
+- fixed the refresh phase lacking `Grep` and `Glob`, which the default Linux tool set omits, by listing its tools explicitly
+- fixed the refresh treating Claude's weekly usage limit as an ordinary failure: like the monthly cap, it now skips the rest of the batch instead of running every remaining repository into the same limit
+
+### Security
+
+- stopped the GitHub runner from acting on workflow commands in Claude's output during the refresh: text Claude echoes from a repository, such as a path the layout skipped, can no longer add annotations, mask log text, or fail the batch, because `::stop-commands::` suspends command processing while Claude runs
+- stopped the refresh phase from loading the target repository's settings, hooks, and MCP servers, which ran with the workflow's tokens in their environment; it now runs isolated and with `--permission-mode dontAsk`, like the audit
+
 ## [0.10.0] - 2026-10-07
 
 ### Added

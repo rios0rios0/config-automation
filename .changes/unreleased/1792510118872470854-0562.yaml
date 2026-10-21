@@ -1,3 +1,0 @@
-kind: 'Security'
-body: 'stopped the GitHub runner from acting on workflow commands in Claude''s output during the refresh: text Claude echoes from a repository, such as a path the layout skipped, can no longer add annotations, mask log text, or fail the batch, because `::stop-commands::` suspends command processing while Claude runs'
-time: '2026-10-20T15:28:38.87241819Z'

@@ -1,3 +1,0 @@
-kind: 'Changed'
-body: 'rewrote the refresh''s scope discovery and `AGENTS.md` layout helpers, with every test of the refresh, in Go: `refresh-docs scope` and `refresh-docs layout` replace the Python scripts, so the repository no longer needs Python'
-time: '2026-10-20T15:28:38.869793156Z'

@@ -1,3 +1,0 @@
-kind: 'Added'
-body: 'added an `AGENTS.md` layout step to the weekly refresh: a repository''s `CLAUDE.md` moves into `AGENTS.md` (a rename is committed on its own so history follows the file) and becomes the one-line `@AGENTS.md` import, text a `CLAUDE.md` adds beside an existing `AGENTS.md` is appended for the refresh to integrate, and a symlink between the two becomes the import file'
-time: '2026-10-19T21:26:19.788566389Z'
