@@ -1,3 +1,0 @@
-kind: 'Fixed'
-body: 'fixed releases publishing the `harden-repos` binary under the name `autobump`, left over from the workflow template, and pinned its main package now that `cmd/refresh-docs` is a second one'
-time: '2026-10-20T16:07:15.610659076Z'
