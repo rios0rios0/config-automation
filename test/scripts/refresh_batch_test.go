@@ -28,10 +28,24 @@ const (
 	legacyClaude  = entities.LegacyBanner + "\n## Build\n\nmake test\n"
 )
 
-// batchGitStub passes every call to the real git, except that it fails
-// `git -C <clone> add --` for FAIL_STAGE_REPO and resolves a clone URL to
-// the bare fixture repository of the same name.
+// batchGitStub passes every call to the real git, keeping its leading `-c`
+// options, except that it fails `git -C <clone> add --` for FAIL_STAGE_REPO
+// and resolves a clone URL to the bare fixture repository of the same name.
+// It records every argument it is given and every clone URL, and for each
+// clone and push the password those `-c` options make git answer for
+// github.com, which is what the real HTTPS transport would send.
 const batchGitStub = `set -u
+printf '%s\n' "$@" >> "${FIXTURE_ROOT}/git-arguments"
+config=()
+while [ "$#" -ge 2 ] && [ "$1" = '-c' ]; do
+  config+=("$1" "$2")
+  shift 2
+done
+answer() {
+  password="$(printf 'protocol=https\nhost=github.com\n\n' \
+    | "${REAL_GIT}" "${config[@]}" credential fill 2>/dev/null | sed -n 's/^password=//p')"
+  printf '%s %s\n' "$1" "${password}" >> "${FIXTURE_ROOT}/credentials"
+}
 if [ "$#" -gt 3 ] && [ "$1" = '-C' ] && [ "$3" = 'add' ] && [ "$4" = '--' ] \
     && [ "$(basename -- "$2")" = "${FAIL_STAGE_REPO:-}" ]; then
   exit 22
@@ -39,23 +53,31 @@ fi
 if [ "$#" -ge 3 ] && [ "$1" = 'clone' ] && [ "$2" = '--quiet' ]; then
   url="$3"
   shift 3
+  printf '%s\n' "${url}" >> "${FIXTURE_ROOT}/clone-urls"
+  answer clone
   set -- clone --quiet "${FIXTURE_ROOT}/${url##*/}" "$@"
+elif [ "$#" -ge 3 ] && [ "$1" = '-C' ] && [ "$3" = 'push' ]; then
+  answer push
 fi
-exec "${REAL_GIT}" "$@"
+exec "${REAL_GIT}" "${config[@]}" "$@"
 `
 
-// batchGhStub records every PR it is asked to create.
-const batchGhStub = `if [ "${1:-}" = 'pr' ] && [ "${2:-}" = 'create' ]; then
+// batchGhStub records the token every call receives and every PR it is
+// asked to create.
+const batchGhStub = `printf '%s\n' "${GH_TOKEN:-}" >> "${FIXTURE_ROOT}/gh-tokens"
+if [ "${1:-}" = 'pr' ] && [ "${2:-}" = 'create' ]; then
   echo 'created' >> "${FIXTURE_ROOT}/prs"
   echo 'https://github.com/fixture/repository/pull/1'
 fi
 `
 
-// batchClaudeStub audits successfully unless FAIL_AUDIT_REPO names the
-// clone, and on refresh records the prompt, applies REFRESH_WRITES (a JSON
-// object of path to content, null deleting), and echoes CLAUDE_ECHO.
+// batchClaudeStub records its environment and audits successfully unless
+// FAIL_AUDIT_REPO names the clone, and on refresh records the prompt,
+// applies REFRESH_WRITES (a JSON object of path to content, null deleting),
+// and echoes CLAUDE_ECHO.
 const batchClaudeStub = `set -euo pipefail
 basename -- "${PWD}" >> "${FIXTURE_ROOT}/claude-calls"
+env >> "${FIXTURE_ROOT}/claude-environment"
 if [ "$(wc -c)" -ne 0 ]; then
   echo 'batch stdin leaked' >&2
   exit 1
@@ -115,7 +137,8 @@ func newBatchFixture(t *testing.T) *batchFixture {
 		"GIT_TERMINAL_PROMPT": "0", "XDG_CONFIG_HOME": filepath.Join(root, "xdg"),
 		"TMPDIR": root, "GITHUB_WORKSPACE": projectRoot(), "REAL_GIT": realGit, "FIXTURE_ROOT": root,
 		"PATH":     bin + separator + os.Getenv(binaryDirectoryVariable) + separator + os.Getenv("PATH"),
-		"GH_TOKEN": "fixture-token-placeholder", "CLAUDE_MODEL": "claude-opus-5-5", "MAX_TURNS": "7",
+		"GH_TOKEN": "fixture-token-placeholder", "CLAUDE_CODE_OAUTH_TOKEN": "fixture-oauth-placeholder",
+		"CLAUDE_MODEL": "claude-opus-5-5", "MAX_TURNS": "7",
 		"STALE_AFTER_DAYS": "0", "REPO_INPUT": "", "REFRESH_BRANCH": refreshBranch, "REFRESH_WRITES": "{}",
 	}}
 }
@@ -204,6 +227,14 @@ func (f *batchFixture) run(writes map[string]any, overrides map[string]string) b
 func (f *batchFixture) show(remote, path string) string {
 	f.t.Helper()
 	return f.git(remote, "show", refreshBranch+":"+path)
+}
+
+// record returns what the doubles wrote to name below the fixture root.
+func (f *batchFixture) record(name string) string {
+	f.t.Helper()
+	content, err := os.ReadFile(filepath.Join(f.root, name))
+	require.NoError(f.t, err)
+	return string(content)
 }
 
 // stepScript extracts the `run` block of the workflow step whose name

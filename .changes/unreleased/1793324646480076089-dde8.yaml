@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'extended the refresh''s check for credential-shaped text to fine-grained GitHub and Anthropic token shapes, since the agent necessarily holds the Claude Code token, and to the changelog entry staged with the refreshed files'
+time: '2026-10-30T01:44:06.480031227Z'
