@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'kept the owner''s token out of the config and docs refresh agent''s environment and out of the clone it works in: Claude Code now starts without `GH_TOKEN`, and the clone and the push authenticate through a git credential helper that reads it when git asks, rather than through a token in the clone URL, which the clone stored in its `.git/config`'
+time: '2026-10-30T01:51:24.945719123Z'

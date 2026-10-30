@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'made a single-repo dispatch of the config and docs refresh refuse a fork or an archived repository, which the scheduled run already left out, so the refresh no longer works on instruction files a fork carries from its upstream'
+time: '2026-10-30T01:43:06.393912242Z'

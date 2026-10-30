@@ -131,6 +131,15 @@ gh variable set CLAUDE_EFFORT -R rios0rios0/config-automation --body 'high'
 Neither phase loads the target repository's settings, hooks, or MCP servers, and both
 run with `--permission-mode dontAsk`, so anything outside their grants is denied.
 
+Neither phase holds the owner's PAT either. The clone and the push authenticate
+through a git credential helper that reads `GH_TOKEN` when git asks for it, so the
+token is not in the clone's remote URL (and therefore not in its `.git/config`) nor
+on a command line, and Claude Code is started with `GH_TOKEN` removed from its
+environment. `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI needs, is the one secret it
+keeps. The check that rejects credential-shaped text in the refresh's diff, the
+changelog entry included, matches the shapes of both tokens: a fine-grained GitHub
+token and an Anthropic token.
+
 A README alone does not count as existing assistant guidance, so it cannot suppress
 a repository's initial guidance refresh.
 
@@ -168,7 +177,9 @@ layout it just changed.
 Every workflow runs on cron; no manual action is needed in steady state.
 
 Manual trigger — one-off config-and-docs refresh against a single repo. Pass
-`owner/name` to reach any configured owner; a bare name uses the first one:
+`owner/name` to reach any configured owner; a bare name uses the first one. A fork
+or an archived repository is refused with an error, as the scheduled run leaves
+them out:
 
 ```bash
 gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump

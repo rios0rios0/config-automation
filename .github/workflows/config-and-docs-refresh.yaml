@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner).'
+        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner). A fork or an archived repo is refused, as on the schedule.'
         required: false
         type: 'string'
       batch_size:
@@ -130,7 +130,20 @@ jobs:
             target_name="${target#*/}"
             GH_TOKEN="$(owner_token "${target_owner}")"
             export GH_TOKEN
-            default_branch=$(gh api "/repos/${target}" --jq '.default_branch')
+            # The same call reads the two flags the scheduled matrix filters on
+            # (`ListTargetRepositoriesCommand` behind `--list-json`), so naming a
+            # repository cannot reach one the schedule leaves out: a fork's
+            # instruction files are its upstream's, and an archived repository is
+            # read-only. It is refused rather than skipped, so the dispatch fails
+            # visibly instead of finishing green with nothing refreshed.
+            repo_meta=$(gh api "/repos/${target}" --jq '{default_branch, fork, archived}')
+            refusal=$(jq -r '[if .fork then "a fork" else empty end, if .archived then "archived" else empty end]
+              | join(" and ")' <<< "${repo_meta}")
+            if [ -n "${refusal}" ]; then
+              echo "::error::Refusing to refresh ${target}: it is ${refusal}, and forks and archived repositories are left out of this workflow."
+              exit 1
+            fi
+            default_branch=$(jq -r '.default_branch' <<< "${repo_meta}")
             # Built with `jq -n` rather than printf so a name containing
             # quotes cannot break out of the JSON string.
             repos=$(jq -cn \
@@ -312,6 +325,11 @@ jobs:
           # this resolves to the fine-grained PAT for exactly the owner being processed.
           # A fine-grained token is bound to one resource owner, so a single shared
           # secret could never clone and push across all of them.
+          #
+          # Only git and gh use it: git through `git_authenticated` below, gh from
+          # this environment for the PR calls. Claude Code is started without it,
+          # because nothing the agent does needs write access to the owner's
+          # repositories.
           GH_TOKEN: ${{ secrets[matrix.batch.secret] }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
@@ -338,6 +356,22 @@ jobs:
           set -euo pipefail
           git config --global user.name 'config-bot'
           git config --global user.email 'config-bot@users.noreply.github.com'
+
+          # Every git command that talks to GitHub runs through this, so the owner's
+          # token is never part of a remote URL --- which `git clone` would store in
+          # the clone's `.git/config`, inside the directory Claude Code then works
+          # in --- nor of any command line. git asks the helper for a credential
+          # only when GitHub requests one, and the helper answers from `GH_TOKEN`
+          # at that moment: the snippet is single-quoted, so the variable is
+          # expanded by the shell git starts for it, where `printf` is a builtin.
+          # The empty `credential.helper=` first clears any helper configured on
+          # the runner, so no other helper is asked or stores the token. `-c`
+          # applies to this invocation and its children only; nothing is written.
+          git_authenticated() {
+            git -c credential.helper= \
+              -c 'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "${GH_TOKEN}"; }; f' \
+              "$@"
+          }
 
           PROMPT_CONTENT="$(cat "${GITHUB_WORKSPACE}/scripts/refresh_config_and_docs_prompt.md")"
           WORK_DIR="$(mktemp -d)"
@@ -419,9 +453,7 @@ jobs:
             echo "=========== [${idx}/${total}] ${target_repo} ==========="
             rm -rf "${target}"
 
-            if ! git clone --quiet \
-                "https://x-access-token:${GH_TOKEN}@github.com/${target_repo}.git" \
-                "${target}"; then
+            if ! git_authenticated clone --quiet "https://github.com/${target_repo}.git" "${target}"; then
               failed+=("clone: ${target_repo}")
               continue
             fi
@@ -587,11 +619,18 @@ jobs:
             # PIPESTATUS[0] holds the subshell's (claude's) exit code;
             # we explicitly do not want `tee`'s exit code, which is
             # almost always 0 and would mask claude failures.
+            #
+            # `env -u GH_TOKEN` starts the audit and the refresh without the
+            # owner's token: they read files, edit the granted paths and, in a
+            # chlog repository, run `chlog new`, while the clone above and the
+            # push and PR calls below are what use it. That leaves
+            # `CLAUDE_CODE_OAUTH_TOKEN` as the only secret in the agent's
+            # environment, and it stays because it is the CLI's own credential.
             rm -f "${CLAUDE_LOG}"
             stop_token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
             echo "::stop-commands::${stop_token}"
             set +e
-            ( cd "${target}" && bash "${GITHUB_WORKSPACE}/scripts/audit-and-refresh.sh" \
+            ( cd "${target}" && env -u GH_TOKEN bash "${GITHUB_WORKSPACE}/scripts/audit-and-refresh.sh" \
                   "${repo_prompt}" "${CLAUDE_MODEL}" "${MAX_TURNS}" "${changelog_tools}" "${SCOPE_FILE}" </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
             claude_rc=${PIPESTATUS[0]}
             set -e
@@ -750,6 +789,15 @@ jobs:
               continue
             fi
 
+            # Where this repository's changelog entry lands. It is staged with
+            # the drifted files below, so the guard that follows reads it too.
+            changelog_paths=()
+            if [ "${changelog_mode}" = 'chlog' ]; then
+              changelog_paths=('.changes/unreleased')
+            elif [ "${changelog_mode}" = 'changelog' ]; then
+              changelog_paths=('CHANGELOG.md')
+            fi
+
             # Secret-shape guard. What this job writes is prose ABOUT secret
             # hygiene, and gitleaks matches shapes rather than values:
             # several rules in the GitLab-customised set the shared
@@ -770,10 +818,23 @@ jobs:
             # repo for text this run did not write would turn a documentation
             # backlog into a permanently red leg.
             #
+            # The changelog entry is read with them: it is staged with the
+            # drifted files and it is free text the refresh writes. A new chlog
+            # fragment is untracked, so it is marked intent-to-add the same way;
+            # the `-d` test keeps `git add -N` from failing in a chlog repository
+            # that has no fragment directory, where there is nothing to read.
+            #
             # Every pattern is written so it cannot match itself --- each
             # prefix is followed by a bracket expression rather than by body
             # characters, which is exactly the property the approved wording
             # in the prompt relies on.
+            #
+            # Two shapes are matched on a full-length body instead of a prefix
+            # the scanner flags on its own, because what they catch is a token
+            # itself: `github_pat_`, a fine-grained GitHub token, which is what
+            # the owners' tokens are; and `sk-ant-`, an Anthropic token, since
+            # Claude Code's own credential is in the agent's environment while
+            # it runs.
             #
             # The plumbing below is written to fail CLOSED. A guard that
             # quietly does not fire is worse than no guard: it restores the
@@ -797,7 +858,13 @@ jobs:
             #   - the `+++ b/<path>` file headers are dropped explicitly
             #     rather than by matching `^\+[^+]`, which would also drop
             #     an added line whose own first character is a `+`.
-            if ! refresh_diff="$(git -C "${target}" diff HEAD -U0 -- "${drift_paths[@]}")"; then
+            if [ "${changelog_mode}" = 'chlog' ] && [ -d "${target}/.changes/unreleased" ] \
+                && ! git -C "${target}" add -N -- .changes/unreleased; then
+              failed+=("stage: ${target_repo}")
+              rm -rf "${target}"
+              continue
+            fi
+            if ! refresh_diff="$(git -C "${target}" diff HEAD -U0 -- "${drift_paths[@]}" "${changelog_paths[@]}")"; then
               echo '--> could not read the refresh diff to check it for credential-shaped literals; skipping this repo.'
               failed+=("secret-shape: ${target_repo}")
               rm -rf "${target}"
@@ -806,8 +873,8 @@ jobs:
             if printf '%s\n' "${refresh_diff}" \
               | grep -E '^\+' \
               | grep -Ev '^\+\+\+ ' \
-              | grep -E 'xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]' >/dev/null; then
-              echo '--> the refresh added a credential-shaped literal, which the shared gitleaks stage would flag; skipping this repo.'
+              | grep -E 'xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82}|sk-ant-[0-9A-Za-z_-]{32,}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]' >/dev/null; then
+              echo '--> the refresh added a credential-shaped literal, which must not reach a commit; skipping this repo.'
               failed+=("secret-shape: ${target_repo}")
               rm -rf "${target}"
               continue
@@ -822,12 +889,7 @@ jobs:
               rm -rf "${target}"
               continue
             fi
-            stage_paths=("${drift_paths[@]}")
-            if [ "${changelog_mode}" = 'chlog' ]; then
-              stage_paths+=('.changes/unreleased')
-            elif [ "${changelog_mode}" = 'changelog' ]; then
-              stage_paths+=('CHANGELOG.md')
-            fi
+            stage_paths=("${drift_paths[@]}" "${changelog_paths[@]}")
             if ! git -C "${target}" add -- "${stage_paths[@]}"; then
               failed+=("stage: ${target_repo}")
               rm -rf "${target}"
@@ -840,7 +902,7 @@ jobs:
               continue
             fi
 
-            if ! git -C "${target}" push --quiet --force --set-upstream origin "${REFRESH_BRANCH}"; then
+            if ! git_authenticated -C "${target}" push --quiet --force --set-upstream origin "${REFRESH_BRANCH}"; then
               failed+=("push: ${target_repo}")
               rm -rf "${target}"
               continue
