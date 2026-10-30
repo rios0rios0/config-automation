@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner).'
+        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner). A fork or an archived repo is refused, as on the schedule.'
         required: false
         type: 'string'
       batch_size:
@@ -130,7 +130,20 @@ jobs:
             target_name="${target#*/}"
             GH_TOKEN="$(owner_token "${target_owner}")"
             export GH_TOKEN
-            default_branch=$(gh api "/repos/${target}" --jq '.default_branch')
+            # The same call reads the two flags the scheduled matrix filters on
+            # (`ListTargetRepositoriesCommand` behind `--list-json`), so naming a
+            # repository cannot reach one the schedule leaves out: a fork's
+            # instruction files are its upstream's, and an archived repository is
+            # read-only. It is refused rather than skipped, so the dispatch fails
+            # visibly instead of finishing green with nothing refreshed.
+            repo_meta=$(gh api "/repos/${target}" --jq '{default_branch, fork, archived}')
+            refusal=$(jq -r '[if .fork then "a fork" else empty end, if .archived then "archived" else empty end]
+              | join(" and ")' <<< "${repo_meta}")
+            if [ -n "${refusal}" ]; then
+              echo "::error::Refusing to refresh ${target}: it is ${refusal}, and forks and archived repositories are left out of this workflow."
+              exit 1
+            fi
+            default_branch=$(jq -r '.default_branch' <<< "${repo_meta}")
             # Built with `jq -n` rather than printf so a name containing
             # quotes cannot break out of the JSON string.
             repos=$(jq -cn \

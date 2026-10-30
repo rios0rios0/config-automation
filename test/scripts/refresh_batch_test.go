@@ -186,7 +186,7 @@ func (f *batchFixture) run(writes map[string]any, overrides map[string]string) b
 	maps.Copy(variables, overrides)
 	ctx, cancel := context.WithTimeout(f.t.Context(), batchTimeout)
 	defer cancel()
-	command := exec.CommandContext(ctx, "bash", "-c", batchScript(f.t, string(workflow)))
+	command := exec.CommandContext(ctx, "bash", "-c", stepScript(f.t, string(workflow), "Process batch"))
 	command.Dir, command.Env = f.root, environment(variables)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
@@ -206,13 +206,14 @@ func (f *batchFixture) show(remote, path string) string {
 	return f.git(remote, "show", refreshBranch+":"+path)
 }
 
-// batchScript extracts the `run` block of the workflow's batch step.
-func batchScript(t *testing.T, workflow string) string {
+// stepScript extracts the `run` block of the workflow step whose name
+// starts with name.
+func stepScript(t *testing.T, workflow, name string) string {
 	t.Helper()
-	_, step, found := strings.Cut(workflow, "      - name: 'Process batch")
-	require.True(t, found, "batch step not found")
+	_, step, found := strings.Cut(workflow, "      - name: '"+name)
+	require.True(t, found, "step %q not found", name)
 	_, block, found := strings.Cut(step, "        run: |\n")
-	require.True(t, found, "batch script not found")
+	require.True(t, found, "script of step %q not found", name)
 	lines := []string{}
 	for line := range strings.Lines(block) {
 		line = strings.TrimSuffix(line, "\n")

@@ -168,7 +168,9 @@ layout it just changed.
 Every workflow runs on cron; no manual action is needed in steady state.
 
 Manual trigger — one-off config-and-docs refresh against a single repo. Pass
-`owner/name` to reach any configured owner; a bare name uses the first one:
+`owner/name` to reach any configured owner; a bare name uses the first one. A fork
+or an archived repository is refused with an error, as the scheduled run leaves
+them out:
 
 ```bash
 gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
