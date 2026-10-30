@@ -123,7 +123,7 @@ go test -run TestAuditRepositoriesCommand ./internal/domain/commands/
 go test -count=1 ./test/scripts/...  # the refresh's shell against local Git repositories (no test cache)
 ```
 
-Test files use the `_test` package suffix (external tests), `t.Parallel()` on every top-level test function, BDD-style `// given / // when / // then` blocks, and the in-memory doubles in `test/domain/doubles/repositories/` rather than interface mocks. Unit tests carry no build tag, so a plain `go test ./...` runs every suite; `//go:build integration` is reserved for tests that need external infrastructure. `make test` covers only `cmd/` and `internal/`, so CI runs `test/scripts/` in the separate `refresh-tests` job.
+Test files use the `_test` package suffix (external tests), `t.Parallel()` on every top-level test function, BDD-style `// given / // when / // then` blocks, and the in-memory doubles in `test/domain/doubles/repositories/` rather than interface mocks. Unit tests carry no build tag, so a plain `go test ./...` runs every suite; `//go:build integration` is reserved for tests that need external infrastructure. `make test` covers only `cmd/` and `internal/`, so CI runs `test/scripts/` as `tests > test:scripts`, in the shared pipeline's tests stage (its `extra_test_command` input).
 
 ## Conventions Specific to This Repo
 
