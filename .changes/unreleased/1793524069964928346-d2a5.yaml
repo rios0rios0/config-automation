@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'changed the imports and the module requirement of `github.com/google/go-github/v75` to `github.com/google/go-github/v83`'
+time: '2026-11-01T09:07:49.964928346Z'
