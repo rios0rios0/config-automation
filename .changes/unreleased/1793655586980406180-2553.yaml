@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed the config and docs refresh installing Claude Code on Node.js 20, below the Node.js 22 minimum the CLI declares as of `2.1.316`: npm only warned (`EBADENGINE`) and installed it anyway, and the job now sets up Node.js 22'
+time: '2026-11-02T21:39:46.980349004Z'

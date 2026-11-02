@@ -114,7 +114,8 @@ scope overrides remain intact; ambiguous changes stay in the report.
 `CLAUDE.md` and `AGENTS.md` files plus rules, skills, commands, and subagents. These
 are session commands, distinct from the terminal's `claude doctor` installation check.
 [Print mode supports skill invocations](https://code.claude.com/docs/en/headless).
-The workflow installs Claude Code from the `>=2.1.283` npm range.
+The workflow installs Claude Code from the `>=2.1.283` npm range on Node.js 22, the
+minimum the CLI declares.
 
 Both phases use the `CLAUDE_MODEL` GitHub Actions repository variable, falling back
 to [`claude-opus-5-5`](https://platform.claude.com/docs/en/models/opus-5-5/overview),
