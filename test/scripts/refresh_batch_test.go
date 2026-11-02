@@ -530,7 +530,15 @@ func TestRefreshBatch(t *testing.T) {
 func TestRefreshBatchUsageLimit(t *testing.T) {
 	t.Parallel()
 
-	for _, message := range []string{"You have hit your weekly limit", "Claude AI monthly usage limit reached"} {
+	// The third is the org spend cap's wording, which neither older phrase
+	// matched (2026-10-26, 2026-11-02). The fourth is an audit result worded
+	// as no phrase covers, where the error code alone has to mark the limit.
+	for _, message := range []string{
+		"You have hit your weekly limit",
+		"Claude AI monthly usage limit reached",
+		"You've hit your org's monthly spend limit · ask your admin to raise it",
+		`{"type":"result","is_error":true,"api_error":"usage_limit_reached","result":"reworded"}`,
+	} {
 		t.Run("should skip the rest of the batch when Claude reports: "+message, func(t *testing.T) {
 			t.Parallel()
 			// given
