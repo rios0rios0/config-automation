@@ -591,10 +591,17 @@ jobs:
             #
             # Output is tee'd to ${CLAUDE_LOG} so the failure can be told
             # apart:
-            #   - usage limit (`monthly usage limit` or `hit your weekly limit`)
-            #     --- the Claude subscription cap is exhausted. Every
+            #   - usage limit (`monthly usage limit`, `monthly spend limit`,
+            #     `hit your weekly limit`, or the `usage_limit_reached` error
+            #     code) --- the Claude subscription cap is exhausted. Every
             #     remaining repo would burn ~3min into the same wall, so
-            #     `quota_hit=1` short-circuits the batch.
+            #     `quota_hit=1` short-circuits the batch. The code is matched
+            #     as well as the wording because the CLI rewords the message:
+            #     "hit your org's monthly spend limit" matched neither older
+            #     phrase, so the 2026-10-26 and 2026-11-02 runs filed every
+            #     quota hit as a plain `claude:` failure. The audit's JSON has
+            #     carried `api_error: usage_limit_reached` for every limit seen
+            #     so far; the refresh prints text only, so it needs the wording.
             #   - safeguard refusal --- Claude declines the repo's content
             #     (e.g. a security-topic repo trips the cybersecurity
             #     safeguard). This is deterministic for that one repo and
@@ -636,7 +643,7 @@ jobs:
             set -e
             echo "::${stop_token}::"
             if [ "${claude_rc}" -ne 0 ]; then
-              if grep -qEi 'monthly usage limit|hit your weekly limit' "${CLAUDE_LOG}"; then
+              if grep -qEi 'monthly (usage|spend) limit|hit your weekly limit|usage_limit_reached' "${CLAUDE_LOG}"; then
                 echo "--> Claude usage limit reached; skipping the rest of this batch."
                 failed+=("claude-quota: ${target_repo}")
                 quota_hit=1

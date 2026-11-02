@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed the config and docs refresh recording a Claude Code usage limit as an ordinary `claude:` failure for every remaining repository when the limit is the org monthly spend cap: the usage-limit check now also matches `monthly spend limit` and the `usage_limit_reached` error code in the JSON the audit prints, so the batch stops at the first hit and lists the rest as `quota_skipped`'
+time: '2026-11-02T21:38:12.14020656Z'
