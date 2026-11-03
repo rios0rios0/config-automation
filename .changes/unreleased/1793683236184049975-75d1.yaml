@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'kept the owner''s token out of the release reconciliation''s clone URLs and command lines: git now authenticates through a credential helper that answers from `GH_TOKEN`, as the config and docs refresh does, so none of the git output the job prints can carry it'
+time: '2026-11-03T05:20:36.183986454Z'

@@ -1,5 +1,6 @@
-// Package scripts_test runs the refresh's shell against local Git
-// repositories, with bash doubles standing in for the remote CLIs.
+// Package scripts_test runs the refresh's and the release reconciliation's
+// shell against local Git repositories, with bash doubles standing in for the
+// remote CLIs.
 package scripts_test
 
 import (
