@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'changed the weekly release reconciliation to skip the `medhub-life` owner: the job pushed a tag for every changelog version that had none, however old, and in that organization each such tag push started a delivery run of a release older than the one already running; the `medhub-life` leg of the owner matrix in `.github/workflows/release-reconcile.yaml` is commented out, with the line to restore, until the job refuses any version lower than the highest tag the repository already has'
+time: '2026-11-03T04:44:57.224346664Z'
