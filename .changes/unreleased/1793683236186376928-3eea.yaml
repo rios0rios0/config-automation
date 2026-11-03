@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'changed the weekly release reconciliation to cover the `medhub-life` owner again, whose leg had been paused on 2026-11-03 until the job refused a version at or below the repository''s highest tag'
+time: '2026-11-03T05:20:36.186321804Z'

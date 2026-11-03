@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed the release reconciliation discarding git''s output, which left a failed tag push such as `medhub-life/backend` `4.4.0` and `4.3.0` on 2026-11-02 without a reason in the log: the output of a failed clone, tag fetch, tag creation or push is now printed under the line it explains'
+time: '2026-11-03T05:20:36.181762334Z'

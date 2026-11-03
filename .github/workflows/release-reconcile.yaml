@@ -4,8 +4,10 @@ name: 'Release Reconcile'
 # when a bump PR merges to a repo's main but that run fails the quality gate, the
 # pipelines delivery-release job never runs, so no tag/release is cut even though
 # CHANGELOG.md already carries the version. This job diffs every repo's changelog
-# against its tags and re-pushes any missing tag at its bump commit, which
-# re-triggers the pipelines tag-push delivery path and re-cuts the release.
+# against its tags and re-pushes a missing tag at its bump commit, which
+# re-triggers the pipelines tag-push delivery path and re-cuts the release. It
+# pushes only a version above the repository's highest SemVer tag: a tag push
+# deploys, and a lower version is a bump a later release already superseded.
 on:
   schedule:
     # Weekly on Mondays at 08:00 UTC (after the 06:00 compliance audit and the
@@ -48,14 +50,16 @@ jobs:
         owner:
           - name: 'rios0rios0'
             secret: 'PERSONAL_ACCESS_TOKEN'
-          # PAUSED for `medhub-life` (2026-11-03). This job pushes a tag for every changelog
-          # version that has none, however old, and a tag push starts that repository's delivery
-          # run. In `medhub-life` it pushed tags older than the release already running and so
-          # started deployments of those older versions. To undo: uncomment the two
-          # lines below, but only once this job refuses any version lower than the highest tag the
-          # repository already has (the check belongs in `scripts/reconcile-repos.sh`).
-          # - name: 'medhub-life'
-          #   secret: 'MEDHUB_ACCESS_TOKEN'
+          # Was PAUSED for `medhub-life` on 2026-11-03 (#121): the job pushed a tag for every
+          # changelog version that had none, however old, and since a tag push starts that
+          # repository's delivery run, it redeployed bumps a later release had superseded (frontend
+          # `0.4.0` after `0.4.1`, backend `2.1.0` and `2.1.1` after `2.1.2`). It is safe to run
+          # again because `scripts/reconcile-repos.sh` now pushes only a version above the
+          # repository's highest SemVer tag and logs every other gap as skipped (#122). An untagged
+          # version above that tag is still pushed, as this job exists to do: iac's `0.4.0` of
+          # 2026-11-02 was one, its newest version at the time.
+          - name: 'medhub-life'
+            secret: 'MEDHUB_ACCESS_TOKEN'
           - name: 'prefy'
             secret: 'PREFY_ACCESS_TOKEN'
     env:
