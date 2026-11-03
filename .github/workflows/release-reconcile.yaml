@@ -48,8 +48,14 @@ jobs:
         owner:
           - name: 'rios0rios0'
             secret: 'PERSONAL_ACCESS_TOKEN'
-          - name: 'medhub-life'
-            secret: 'MEDHUB_ACCESS_TOKEN'
+          # PAUSED for `medhub-life` (2026-11-03). This job pushes a tag for every changelog
+          # version that has none, however old, and a tag push starts that repository's delivery
+          # run. In `medhub-life` it pushed tags older than the release already running and so
+          # started deployments of those older versions. To undo: uncomment the two
+          # lines below, but only once this job refuses any version lower than the highest tag the
+          # repository already has (the check belongs in `scripts/reconcile-repos.sh`).
+          # - name: 'medhub-life'
+          #   secret: 'MEDHUB_ACCESS_TOKEN'
           - name: 'prefy'
             secret: 'PREFY_ACCESS_TOKEN'
     env:
