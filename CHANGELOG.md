@@ -22,6 +22,29 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-04
+
+### Changed
+
+- changed the Go module `go.yaml.in/yaml/v3` from `v3.0.5` to `v3.0.6`
+- changed the shell-orchestration suites (`test/scripts/`) into an input of the shared Go pipeline (`extra_test_*`), so they run as `tests > test:scripts` in its tests stage, after the security stage and before delivery, instead of as a job of its own that started at once beside the first stage
+- changed the weekly release reconciliation to cover the `medhub-life` owner again, whose leg had been paused on 2026-11-03 until the job refused a version at or below the repository's highest tag
+- changed the weekly release reconciliation to skip the `medhub-life` owner: the job pushed a tag for every changelog version that had none, however old, and in that organization each such tag push started a delivery run of a release older than the one already running; the `medhub-life` leg of the owner matrix in `.github/workflows/release-reconcile.yaml` is commented out, with the line to restore, until the job refuses any version lower than the highest tag the repository already has
+
+### Fixed
+
+- fixed the config and docs refresh installing Claude Code on Node.js 20, below the Node.js 22 minimum the CLI declares as of `2.1.316`: npm only warned (`EBADENGINE`) and installed it anyway, and the job now sets up Node.js 22
+- fixed the config and docs refresh recording a Claude Code usage limit as an ordinary `claude:` failure for every remaining repository when the limit is the org monthly spend cap: the usage-limit check now also matches `monthly spend limit` and the `usage_limit_reached` error code in the JSON the audit prints, so the batch stops at the first hit and lists the rest as `quota_skipped`
+- fixed the release reconciliation discarding git's output, which left a failed tag push such as `medhub-life/backend` `4.4.0` and `4.3.0` on 2026-11-02 without a reason in the log: the output of a failed clone, tag fetch, tag creation or push is now printed under the line it explains
+- fixed the weekly release reconciliation pushing a tag for a changelog version at or below the repository's highest SemVer tag: each tag push deploys, so in `medhub-life` it re-pushed bumps a later release had superseded every Monday (frontend `0.4.0` after `0.4.1`, backend `2.1.0` and `2.1.1` after `2.1.2`); `scripts/reconcile-repos.sh` now pushes only a version above that tag, compared in SemVer order rather than as text, logs every other gap as `skipped: <version> is below the highest tag <tag>`, no longer counts such a gap toward `fail_on_gap`, and does not scan a repository whose tags it could not fetch
+
+### Security
+
+- extended the refresh's check for credential-shaped text to fine-grained GitHub and Anthropic token shapes, since the agent necessarily holds the Claude Code token, and to the changelog entry staged with the refreshed files
+- kept the owner's token out of the config and docs refresh agent's environment and out of the clone it works in: Claude Code now starts without `GH_TOKEN`, and the clone and the push authenticate through a git credential helper that reads it when git asks, rather than through a token in the clone URL, which the clone stored in its `.git/config`
+- kept the owner's token out of the release reconciliation's clone URLs and command lines: git now authenticates through a credential helper that answers from `GH_TOKEN`, as the config and docs refresh does, so none of the git output the job prints can carry it
+- made a single-repo dispatch of the config and docs refresh refuse a fork or an archived repository, which the scheduled run already left out, so the refresh no longer works on instruction files a fork carries from its upstream
+
 ## [0.11.0] - 2026-10-21
 
 ### Added
