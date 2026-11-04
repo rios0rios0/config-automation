@@ -1,3 +1,0 @@
-kind: 'Fixed'
-body: 'fixed the weekly release reconciliation pushing a tag for a changelog version at or below the repository''s highest SemVer tag: each tag push deploys, so in `medhub-life` it re-pushed bumps a later release had superseded every Monday (frontend `0.4.0` after `0.4.1`, backend `2.1.0` and `2.1.1` after `2.1.2`); `scripts/reconcile-repos.sh` now pushes only a version above that tag, compared in SemVer order rather than as text, logs every other gap as `skipped: <version> is below the highest tag <tag>`, no longer counts such a gap toward `fail_on_gap`, and does not scan a repository whose tags it could not fetch'
-time: '2026-11-03T05:20:36.179241011Z'
