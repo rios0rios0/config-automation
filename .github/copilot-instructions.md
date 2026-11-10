@@ -67,7 +67,7 @@ config-automation/
 │   │   ├── entities/               # `Repository`, `SecuritySettings`, `BranchProtection`, `Ruleset`, `AuditResult`, `SonarProject`, `compliance_policy.go`, `sonar_analysis_policy.go`
 │   │   └── repositories/           # ports: repos, security, branch protection, Sonar projects, Git working tree
 │   └── infrastructure/
-│       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v75`, plus `SonarCloudSonarProjectsRepository` over the SonarQube Cloud Web API
+│       └── repositories/           # `GoGithub…Repository` adapters over `github.com/google/go-github/v93`, plus `SonarCloudSonarProjectsRepository` over the SonarQube Cloud Web API
 ├── test/
 │   └── domain/
 │       ├── builders/               # `RepositoryBuilder`, `AuditResultBuilder`

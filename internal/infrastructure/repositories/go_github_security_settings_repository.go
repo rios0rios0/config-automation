@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/google/go-github/v93/github"
@@ -106,8 +107,8 @@ func (r GoGithubSecuritySettingsRepository) EnableSecretScanning(ctx context.Con
 // Only `enabled` is sent: the same endpoint also carries the
 // allowed-actions policy, which a fork keeps untouched.
 func (r GoGithubSecuritySettingsRepository) DisableActions(ctx context.Context, owner, name string) error {
-	_, _, err := r.client.Repositories.EditActionsPermissions(ctx, owner, name, github.ActionsPermissionsRepository{
-		Enabled: new(false),
+	_, _, err := r.client.Repositories.UpdateActionsPermissions(ctx, owner, name, github.ActionsPermissionsRepository{
+		Enabled: false,
 	})
 	return err
 }
@@ -149,19 +150,33 @@ func (r GoGithubSecuritySettingsRepository) findAutomatedSecurityFixes(
 	return *fixes.Enabled, nil
 }
 
+// actionsSwitch is the one field of the Actions permissions payload that
+// findActionsEnabled reads. go-github types `enabled` as a plain bool, so
+// its own GetActionsPermissions reads a payload without the field as
+// "disabled"; the pointer here keeps that case apart.
+type actionsSwitch struct {
+	Enabled *bool `json:"enabled"`
+}
+
 // findActionsEnabled reads the repository-level GitHub Actions switch.
 // Any failure — including a payload without the field — is surfaced as
 // an error so the caller leaves ActionsEnabled nil (unknown) rather than
-// recording a state it never saw.
+// recording a state it never saw. It sends the same request as
+// GetActionsPermissions, decoded into actionsSwitch instead.
 func (r GoGithubSecuritySettingsRepository) findActionsEnabled(
 	ctx context.Context,
 	owner, name string,
 ) (bool, error) {
-	permissions, _, err := r.client.Repositories.GetActionsPermissions(ctx, owner, name)
+	path := fmt.Sprintf("repos/%v/%v/actions/permissions", owner, name)
+	req, err := r.client.NewRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return false, err
 	}
-	if permissions == nil || permissions.Enabled == nil {
+	var permissions actionsSwitch
+	if _, err = r.client.Do(req, &permissions); err != nil {
+		return false, err
+	}
+	if permissions.Enabled == nil {
 		return false, errors.New("actions permissions payload has no enabled field")
 	}
 	return *permissions.Enabled, nil
