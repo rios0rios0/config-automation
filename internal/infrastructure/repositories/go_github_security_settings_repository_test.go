@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v75/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -47,7 +47,10 @@ func newSecurityServer(t *testing.T, actionsStatus int, actionsBody string, capt
 	}))
 	t.Cleanup(server.Close)
 
-	client, err := github.NewClient(server.Client()).WithEnterpriseURLs(server.URL, server.URL)
+	client, err := github.NewClient(
+		github.WithHTTPClient(server.Client()),
+		github.WithEnterpriseURLs(server.URL, server.URL),
+	)
 	require.NoError(t, err)
 	return client
 }
@@ -88,6 +91,25 @@ func TestGoGithubSecuritySettingsRepositoryFindByRepositoryName(t *testing.T) {
 		// then
 		require.NoError(t, err)
 		assert.True(t, settings.IsActionsDisabled())
+	})
+
+	t.Run("should leave the Actions switch unknown when the payload has no enabled field", func(t *testing.T) {
+		t.Parallel()
+		// given — a 200 that omits the switch. go-github's own type reads
+		// it as false, which would report the fork as compliant on a state
+		// nobody saw.
+		var captured []byte
+		client := newSecurityServer(t, http.StatusOK, `{"allowed_actions":"all"}`, &captured)
+		repository := infra.NewGoGithubSecuritySettingsRepository(client)
+		repo := builders.NewRepositoryBuilder().WithName("forked").AsFork().Build()
+
+		// when
+		settings, err := repository.FindByRepositoryName(context.Background(), repo)
+
+		// then
+		require.NoError(t, err)
+		assert.Nil(t, settings.ActionsEnabled)
+		assert.False(t, settings.IsActionsDisabled())
 	})
 
 	t.Run("should leave the Actions switch unknown when the permissions endpoint fails", func(t *testing.T) {

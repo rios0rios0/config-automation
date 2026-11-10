@@ -105,7 +105,11 @@ func main() {
 
 	owners := parseOwners(os.Getenv("HARDEN_OWNER"))
 
-	set := initializeCommands()
+	set, err := initializeCommands()
+	if err != nil {
+		logger.WithError(err).Error("could not initialize the commands")
+		os.Exit(1)
+	}
 	ctx := context.Background()
 
 	switch {

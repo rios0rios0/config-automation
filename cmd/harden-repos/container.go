@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/rios0rios0/config-automation/internal/domain/commands"
 	"github.com/rios0rios0/config-automation/internal/infrastructure/repositories"
 )
@@ -18,8 +20,11 @@ type commandSet struct {
 
 // initializeCommands is the composition root: the three GitHub adapters
 // share one client, and the compiler checks every dependency.
-func initializeCommands() commandSet {
-	githubClient := repositories.NewGithubClient()
+func initializeCommands() (commandSet, error) {
+	githubClient, err := repositories.NewGithubClient()
+	if err != nil {
+		return commandSet{}, fmt.Errorf("building the GitHub client: %w", err)
+	}
 	reposRepo := repositories.NewGoGithubRepositoriesRepository(githubClient)
 	securityRepo := repositories.NewGoGithubSecuritySettingsRepository(githubClient)
 	protectionsRepo := repositories.NewGoGithubBranchProtectionsRepository(githubClient)
@@ -32,5 +37,5 @@ func initializeCommands() commandSet {
 		ListTargets:     commands.NewListTargetRepositoriesCommand(reposRepo),
 		Report:          commands.NewReportComplianceChangesCommand(),
 		ApplySonar:      commands.NewApplySonarPolicyCommand(sonarRepo),
-	}
+	}, nil
 }

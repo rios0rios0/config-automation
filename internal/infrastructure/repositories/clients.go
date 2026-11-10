@@ -1,29 +1,31 @@
 package repositories
 
 import (
-	"context"
 	"os"
 	"strings"
 
-	"github.com/google/go-github/v75/github"
-	"golang.org/x/oauth2"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
 )
 
 // NewGithubClient builds the go-github client the GitHub adapters share. It
 // reads the token from GH_TOKEN, falling back to GITHUB_TOKEN, the variables
-// the gh CLI reads; without either it calls the API anonymously.
-func NewGithubClient() *github.Client {
+// the gh CLI reads; without either it calls the API anonymously. The options
+// are applied after the token, so a caller can point the client somewhere
+// else, as a test does with a local server.
+func NewGithubClient(options ...github.ClientOptionsFunc) (*github.Client, error) {
 	token := os.Getenv("GH_TOKEN")
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
-	if token == "" {
-		return github.NewClient(nil)
+	// go-github refuses an empty token, so the anonymous client is the one
+	// built without the option rather than with an empty one.
+	var all []github.ClientOptionsFunc
+	if token != "" {
+		all = append(all, github.WithAuthToken(token))
 	}
-	httpClient := oauth2.NewClient(context.Background(), oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}))
-	return github.NewClient(httpClient)
+	return github.NewClient(append(all, options...)...)
 }
 
 // SonarConfig carries the SonarQube Cloud endpoint and credential into

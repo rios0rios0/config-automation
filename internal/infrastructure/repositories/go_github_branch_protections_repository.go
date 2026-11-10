@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/go-github/v75/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
 	"github.com/rios0rios0/config-automation/internal/domain/repositories"

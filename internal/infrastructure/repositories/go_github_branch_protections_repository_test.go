@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v75/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -40,7 +40,10 @@ func newCapturingClient(t *testing.T, captured *[]byte, method, path string) *gi
 	}))
 	t.Cleanup(server.Close)
 
-	client, err := github.NewClient(server.Client()).WithEnterpriseURLs(server.URL, server.URL)
+	client, err := github.NewClient(
+		github.WithHTTPClient(server.Client()),
+		github.WithEnterpriseURLs(server.URL, server.URL),
+	)
 	require.NoError(t, err)
 	return client
 }
@@ -212,7 +215,10 @@ func TestGoGithubBranchProtectionsRepositoryFindRulesetByName(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		client, err := github.NewClient(server.Client()).WithEnterpriseURLs(server.URL, server.URL)
+		client, err := github.NewClient(
+			github.WithHTTPClient(server.Client()),
+			github.WithEnterpriseURLs(server.URL, server.URL),
+		)
 		require.NoError(t, err)
 		return client
 	}
@@ -309,7 +315,10 @@ func TestGoGithubBranchProtectionsRepositoryFindProtectionByBranch(t *testing.T)
 		}))
 		t.Cleanup(server.Close)
 
-		client, err := github.NewClient(server.Client()).WithEnterpriseURLs(server.URL, server.URL)
+		client, err := github.NewClient(
+			github.WithHTTPClient(server.Client()),
+			github.WithEnterpriseURLs(server.URL, server.URL),
+		)
 		require.NoError(t, err)
 		return client
 	}
