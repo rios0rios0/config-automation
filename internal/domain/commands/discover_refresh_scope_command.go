@@ -23,9 +23,11 @@ func NewDiscoverRefreshScopeCommand(workingTree repositories.WorkingTreeReposito
 	return &DiscoverRefreshScopeCommand{workingTree: workingTree}
 }
 
-// DiscoverRefreshScopeInput names the working tree to inventory.
+// DiscoverRefreshScopeInput names the working tree to inventory and the
+// instruction files it keeps.
 type DiscoverRefreshScopeInput struct {
-	Root string
+	Root             string
+	InstructionFiles entities.InstructionFiles
 }
 
 // DiscoverRefreshScopeListeners receives the manifest or the failure.
@@ -40,7 +42,7 @@ func (c *DiscoverRefreshScopeCommand) Execute(
 	input DiscoverRefreshScopeInput,
 	listeners DiscoverRefreshScopeListeners,
 ) {
-	scope, err := c.discover(ctx, input.Root)
+	scope, err := c.discover(ctx, input.Root, input.InstructionFiles)
 	if err != nil {
 		listeners.OnError(err)
 		return
@@ -48,8 +50,12 @@ func (c *DiscoverRefreshScopeCommand) Execute(
 	listeners.OnSuccess(scope)
 }
 
-func (c *DiscoverRefreshScopeCommand) discover(ctx context.Context, root string) (entities.RefreshScope, error) {
-	existing, skipped, err := c.trackedDocuments(ctx, root)
+func (c *DiscoverRefreshScopeCommand) discover(
+	ctx context.Context,
+	root string,
+	files entities.InstructionFiles,
+) (entities.RefreshScope, error) {
+	tracked, err := c.trackedDocuments(ctx, root, files)
 	if err != nil {
 		return entities.RefreshScope{}, err
 	}
@@ -57,11 +63,11 @@ func (c *DiscoverRefreshScopeCommand) discover(ctx context.Context, root string)
 	// host writes it, so it never receives an edit grant. The root one is
 	// listed even while absent: the host adds it once the refresh creates
 	// AGENTS.md.
-	managed, err := c.managedImports(ctx, root, existing)
+	managed, err := c.managedImports(ctx, root, tracked.existing)
 	if err != nil {
 		return entities.RefreshScope{}, err
 	}
-	if !existing[entities.ClaudeFile] {
+	if files.Claude && !tracked.existing[entities.ClaudeFile] {
 		safe, safeErr := isSafeFile(ctx, c.workingTree, root, entities.ClaudeFile)
 		if safeErr != nil {
 			return entities.RefreshScope{}, safeErr
@@ -70,54 +76,70 @@ func (c *DiscoverRefreshScopeCommand) discover(ctx context.Context, root string)
 			managed[entities.ClaudeFile] = true
 		}
 	}
-	creatable, err := c.creatableDocuments(ctx, root, existing, managed)
+	creatable, err := c.creatableDocuments(ctx, root, files, tracked.existing, managed)
 	if err != nil {
 		return entities.RefreshScope{}, err
 	}
-	editable := union(existing, creatable)
+	editable := union(tracked.existing, creatable)
 	tools := entities.ReadOnlyTools()
 	for _, document := range sortedPaths(editable) {
 		tools = append(tools, "Edit(/"+document+")")
 	}
 	return entities.RefreshScope{
-		Paths:        sortedPaths(union(editable, managed)),
-		Existing:     sortedPaths(existing),
+		Paths:        sortedPaths(union(union(editable, managed), tracked.removed)),
+		Existing:     sortedPaths(tracked.existing),
 		Creatable:    sortedPaths(creatable),
 		Managed:      sortedPaths(managed),
+		Removed:      sortedPaths(tracked.removed),
 		AllowedTools: tools,
-		Skipped:      sortedPaths(skipped),
+		Skipped:      sortedPaths(tracked.skipped),
 	}, nil
 }
 
+// trackedSet splits the tracked refresh paths by what the refresh may do
+// with them.
+type trackedSet struct {
+	existing map[string]bool
+	removed  map[string]bool
+	skipped  map[string]bool
+}
+
 // trackedDocuments splits the tracked refresh paths into regular files the
-// refresh may edit and the rest: symlinks, submodules, unsafe paths.
+// refresh may edit, instruction files of a kind the repository does not keep,
+// and the rest: symlinks, submodules, unsafe paths. A removed path stays
+// tracked until the refresh commit stages its deletion, whatever is on disk.
 func (c *DiscoverRefreshScopeCommand) trackedDocuments(
 	ctx context.Context,
 	root string,
-) (map[string]bool, map[string]bool, error) {
+	files entities.InstructionFiles,
+) (trackedSet, error) {
 	entries, err := c.workingTree.FindIndexEntries(ctx, root)
 	if err != nil {
-		return nil, nil, fmt.Errorf("listing the index: %w", err)
+		return trackedSet{}, fmt.Errorf("listing the index: %w", err)
 	}
-	existing, skipped := map[string]bool{}, map[string]bool{}
+	tracked := trackedSet{existing: map[string]bool{}, removed: map[string]bool{}, skipped: map[string]bool{}}
 	for _, entry := range entries {
 		if !entities.IsRefreshPath(entry.Path) {
 			continue
 		}
 		if entry.Stage != 0 {
-			return nil, nil, fmt.Errorf("unmerged refresh path: %s", entry.Path)
+			return trackedSet{}, fmt.Errorf("unmerged refresh path: %s", entry.Path)
+		}
+		if files.IsRemovedPath(entry.Path) {
+			tracked.removed[entry.Path] = true
+			continue
 		}
 		safe, safeErr := isSafeFile(ctx, c.workingTree, root, entry.Path)
 		if safeErr != nil {
-			return nil, nil, safeErr
+			return trackedSet{}, safeErr
 		}
 		if !safe || !slices.Contains(entities.RegularFileModes(), entry.Mode) {
-			skipped[entry.Path] = true
+			tracked.skipped[entry.Path] = true
 			continue
 		}
-		existing[entry.Path] = true
+		tracked.existing[entry.Path] = true
 	}
-	return existing, skipped, nil
+	return tracked, nil
 }
 
 // managedImports moves every CLAUDE.md that only imports AGENTS.md out of
@@ -146,15 +168,16 @@ func (c *DiscoverRefreshScopeCommand) managedImports(
 	return managed, nil
 }
 
-// creatableDocuments returns the files the refresh may create: the
-// platform's targets and the AGENTS.md every import points at, when absent,
-// safe to write, and not ignored by the repository.
+// creatableDocuments returns the files the refresh may create: the targets
+// the instruction files allow and the AGENTS.md every import points at, when
+// absent, safe to write, and not ignored by the repository.
 func (c *DiscoverRefreshScopeCommand) creatableDocuments(
 	ctx context.Context,
 	root string,
+	files entities.InstructionFiles,
 	existing, managed map[string]bool,
 ) (map[string]bool, error) {
-	candidates := entities.RefreshCreatablePaths()
+	candidates := files.CreatablePaths()
 	for document := range managed {
 		candidates = append(candidates, path.Join(path.Dir(document), entities.AgentsFile))
 	}

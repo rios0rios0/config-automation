@@ -1,0 +1,3 @@
+kind: 'Added'
+body: 'added `.config-automation.yaml`, the owners the config-and-docs refresh walks with the variables that hold their tokens, and `scripts/install-refresh-tools.sh`, the one place the Claude Code CLI range and the chlog version and checksum are pinned for both CI systems'
+time: '2026-11-16T21:37:12.912385579Z'

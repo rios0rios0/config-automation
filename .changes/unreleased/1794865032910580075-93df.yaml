@@ -1,0 +1,3 @@
+kind: 'Added'
+body: 'added the `agents`, `claude` and `copilot` instruction-file settings to the config-and-docs refresh, defaulted per provider (Copilot files off on Azure DevOps) and overridable from the configuration or a `refresh-docs run` flag; the layout pass removes the files of a disabled kind before the audit, and the prompt, now a template embedded in the binary, drops their rules'
+time: '2026-11-16T21:37:12.910535998Z'

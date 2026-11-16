@@ -24,7 +24,7 @@ func discoverScope(t *testing.T, tree *doubles.InMemoryWorkingTreeRepository) (e
 	var failure error
 	commands.NewDiscoverRefreshScopeCommand(tree).Execute(
 		t.Context(),
-		commands.DiscoverRefreshScopeInput{Root: "/repository"},
+		commands.DiscoverRefreshScopeInput{Root: "/repository", InstructionFiles: githubFiles()},
 		commands.DiscoverRefreshScopeListeners{
 			OnSuccess: func(result entities.RefreshScope) { scope = result },
 			OnError:   func(err error) { failure = err },
@@ -71,7 +71,7 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 		// then
 		require.NoError(t, err)
 		assert.Equal(t, sortedUnion(fixtures.SupportedRefreshPaths()), scope.Existing)
-		assert.Equal(t, sortedUnion(fixtures.SupportedRefreshPaths(), entities.RefreshCreatablePaths()), scope.Paths)
+		assert.Equal(t, sortedUnion(fixtures.SupportedRefreshPaths(), githubFiles().CreatablePaths()), scope.Paths)
 		grants := []string{}
 		for _, path := range scope.Paths {
 			grants = append(grants, "Edit(/"+path+")")
@@ -91,9 +91,9 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 
 			// then
 			require.NoError(t, err)
-			assert.Equal(t, sortedUnion(entities.RefreshCreatablePaths()), scope.Creatable)
+			assert.Equal(t, sortedUnion(githubFiles().CreatablePaths()), scope.Creatable)
 			assert.Equal(t, []string{entities.ClaudeFile}, scope.Managed)
-			assert.Equal(t, sortedUnion(entities.RefreshCreatablePaths(), []string{entities.ClaudeFile}), scope.Paths)
+			assert.Equal(t, sortedUnion(githubFiles().CreatablePaths(), []string{entities.ClaudeFile}), scope.Paths)
 			assert.NotContains(t, scope.AllowedTools, "Edit(/CLAUDE.md)")
 			assert.Empty(t, scope.Existing)
 			assert.Empty(t, scope.Skipped)
@@ -216,7 +216,7 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 		// then
 		require.NoError(t, err)
 		assert.Equal(t, sortedUnion(paths), scope.Skipped)
-		assert.Equal(t, sortedUnion(entities.RefreshCreatablePaths(), []string{entities.ClaudeFile}), scope.Paths)
+		assert.Equal(t, sortedUnion(githubFiles().CreatablePaths(), []string{entities.ClaudeFile}), scope.Paths)
 	})
 
 	t.Run("should fail on a refresh path in a merge conflict", func(t *testing.T) {
@@ -245,4 +245,10 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 		// then
 		require.ErrorIs(t, err, tree.ErrorOnIndex)
 	})
+}
+
+// githubFiles returns the instruction files a GitHub repository keeps by
+// default: every kind.
+func githubFiles() entities.InstructionFiles {
+	return entities.ProviderGitHub.DefaultInstructionFiles()
 }

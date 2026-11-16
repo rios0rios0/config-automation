@@ -1,50 +1,16 @@
-// Package scripts_test runs the refresh's and the release reconciliation's
-// shell against local Git repositories, with bash doubles standing in for the
-// remote CLIs.
+// Package scripts_test runs the release reconciliation's shell against local
+// Git repositories, with bash doubles standing in for the remote CLIs.
 package scripts_test
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-const (
-	// binaryDirectoryVariable carries the directory of the refresh-docs
-	// binary that TestMain builds to every test.
-	binaryDirectoryVariable = "REFRESH_DOCS_TEST_BIN"
-	// executableMode makes a test double runnable.
-	executableMode = 0o755
-)
-
-func TestMain(m *testing.M) {
-	os.Exit(buildAndRun(m))
-}
-
-// buildAndRun builds refresh-docs once, as the workflows do before a
-// batch, and runs the tests with it on PATH.
-func buildAndRun(m *testing.M) int {
-	directory, err := os.MkdirTemp("", "refresh-docs-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer os.RemoveAll(directory)
-	build := exec.Command("go", "build", "-o", filepath.Join(directory, "refresh-docs"), "./cmd/refresh-docs")
-	build.Dir = projectRoot()
-	if output, buildErr := build.CombinedOutput(); buildErr != nil {
-		fmt.Fprintf(os.Stderr, "building refresh-docs: %v\n%s", buildErr, output)
-		return 1
-	}
-	if err = os.Setenv(binaryDirectoryVariable, directory); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return m.Run()
-}
+// executableMode makes a test double runnable.
+const executableMode = 0o755
 
 // projectRoot is the repository this package tests.
 func projectRoot() string {
@@ -56,12 +22,11 @@ func projectRoot() string {
 }
 
 // environment returns this process's environment with overrides applied.
-// CLAUDE_EFFORT set in the caller's shell never leaks into the defaults.
 func environment(overrides map[string]string) []string {
 	result := []string{}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if _, overridden := overrides[name]; !overridden && name != "CLAUDE_EFFORT" {
+		if _, overridden := overrides[name]; !overridden {
 			result = append(result, entry)
 		}
 	}

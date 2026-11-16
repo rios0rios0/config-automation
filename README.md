@@ -15,7 +15,7 @@ The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-s
 ## Features
 
 - **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags, and GitHub Actions disabled on forks).
-- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork non-archived repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. `AGENTS.md` is each repository's instruction file, with a one-line `CLAUDE.md` importing it; the refresh moves legacy `CLAUDE.md` guidance into that layout, then audits and refines `AGENTS.md` alongside existing skills and references, agents, custom commands, README, and CONTRIBUTING. Exact paths are discovered separately for each repository.
+- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork, non-archived, non-disabled repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. `AGENTS.md` is each repository's instruction file, with a one-line `CLAUDE.md` importing it; the refresh moves legacy `CLAUDE.md` guidance into that layout, then audits and refines `AGENTS.md` alongside existing skills and references, agents, custom commands, README, and CONTRIBUTING. Exact paths are discovered separately for each repository. The whole refresh is the `refresh-docs` Go CLI, so the same code runs on GitHub (this repository's workflow) and on Azure DevOps (a [jobs template](#running-on-azure-devops) another organization pins).
 - **Sonar analysis policy** — daily job that applies the fleet's SonarQube Cloud analysis policy to every project of the `rios0rios0` organization: it adds the `sonar.issue.ignore.multicriteria` pairs the fleet needs and triages the findings those rules already raised. Today the policy silences `githubactions:S7637` ("use a full commit SHA") on YAML, because every repository calls the shared CI as `uses: rios0rios0/pipelines/.github/workflows/<name>.yaml@main` and that floating reference is deliberate.
 - **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes a missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). It pushes only a version above the repository's highest SemVer tag, because a tag push deploys: a lower version is a bump a later release superseded, and is skipped and logged. Delegates detection to the single-sourced pipelines primitive and reuses the same per-owner refresh PATs — no new secret required.
 
@@ -74,8 +74,9 @@ not per-owner.
 `sonar-analysis-policy.yaml` has no owner matrix: only `rios0rios0` has a SonarQube Cloud
 organization.
 
-To cover another owner, add a `strategy.matrix.owner` entry to each per-owner workflow (plus the matching
-`OWNERS` entry and `TOKEN_*` line in `config-and-docs-refresh.yaml`) and create its secret.
+To cover another owner, add a `strategy.matrix.owner` entry to each per-owner workflow, add the owner
+to `.config-automation.yaml` (its token variable and `credential`, the secret's name) plus the matching
+`env` line of the `Discover` step in `config-and-docs-refresh.yaml`, and create its secret.
 
 ## Prompt audit and model selection
 
@@ -96,13 +97,14 @@ The supported files are:
 | Skills and references | Markdown under `.claude/skills/` and `.github/skills/` |
 | Agent definitions | Markdown under `.claude/agents/` and `.github/agents/` |
 | Custom commands and prompts | `.claude/commands/**/*.md`, `.github/prompts/**/*.prompt.md` |
-| Project and contributor documentation | Root `README.md`; `CONTRIBUTING.md` at the root, `.github/`, or `docs/` |
+| Project and contributor documentation | Root `README.md`; `CONTRIBUTING.md` at the root, `.github/`, `.azuredevops/`, or `docs/` |
 
 `refresh-docs scope` (`cmd/refresh-docs`) discovers tracked files before either phase. Its manifest
-supplies the edit permissions, prompt inventory, drift detection, staging, and
-activity exclusions, so a change to any supported file can reach the same PR.
-Creation remains limited to the optional `AGENTS.md`,
-`.github/copilot-instructions.md`, and `.github/skills/code-review/SKILL.md` targets.
+supplies the edit permissions, prompt inventory, drift detection, and staging, so a
+change to any supported file can reach the same PR. Creation remains limited to the
+optional `AGENTS.md`, `.github/copilot-instructions.md`, and
+`.github/skills/code-review/SKILL.md` targets, as the
+[instruction-file settings](#instruction-files) allow.
 The job excludes symlinks and dependency/build/generated directories, and reports
 filenames containing control characters or permission-pattern delimiters as skipped.
 Skill/agent metadata, permissions, model pins, generated content, and deliberate
@@ -117,7 +119,7 @@ are session commands, distinct from the terminal's `claude doctor` installation 
 The workflow installs Claude Code from the `>=2.1.283` npm range on Node.js 22, the
 minimum the CLI declares.
 
-Both phases use the `CLAUDE_MODEL` GitHub Actions repository variable, falling back
+Both phases use the `CLAUDE_MODEL` variable (a GitHub Actions repository variable here), falling back
 to [`claude-opus-5-5`](https://platform.claude.com/docs/en/models/opus-5-5/overview),
 and the `CLAUDE_EFFORT` variable (`low`, `medium`, `high`, `xhigh`, or `max`), falling
 back to `high`: Opus 5.5 otherwise runs at
@@ -132,14 +134,15 @@ gh variable set CLAUDE_EFFORT -R rios0rios0/config-automation --body 'high'
 Neither phase loads the target repository's settings, hooks, or MCP servers, and both
 run with `--permission-mode dontAsk`, so anything outside their grants is denied.
 
-Neither phase holds the owner's PAT either. The clone and the push authenticate
-through a git credential helper that reads `GH_TOKEN` when git asks for it, so the
-token is not in the clone's remote URL (and therefore not in its `.git/config`) nor
-on a command line, and Claude Code is started with `GH_TOKEN` removed from its
-environment. `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI needs, is the one secret it
-keeps. The check that rejects credential-shaped text in the refresh's diff, the
-changelog entry included, matches the shapes of both tokens: a fine-grained GitHub
-token and an Anthropic token.
+Neither phase holds the organization's token either. The clone and the push
+authenticate through a git credential helper that answers only for the provider's
+host (`github.com`, `dev.azure.com`) from variables set on that one git process, so
+the token is not in the clone's remote URL (and therefore not in its `.git/config`),
+nor on a command line, nor sent to any other host. Claude Code starts with every
+hosting token removed from its environment; `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
+needs, is the one secret it keeps. The check that rejects credential-shaped text in
+the refresh's diff, the changelog entry included, matches the shapes of both tokens:
+a fine-grained GitHub token and an Anthropic token.
 
 `max_turns` applies separately to each phase (default 50 each). Every run refreshes
 the whole fleet: no repository is skipped for having been quiet since the last run,
@@ -163,20 +166,38 @@ files the PR proposes:
 | `CLAUDE.md` importing a missing `AGENTS.md` | Reported; the refresh may create `AGENTS.md` |
 | Any other symlink, ignored path, or non-UTF-8 file | Reported; neither file of that pair is changed |
 
-`.claude/CLAUDE.md` and dependency/build directories are left alone. The workflow
+`.claude/CLAUDE.md` and dependency/build directories are left alone. The refresh
 owns the one-line `CLAUDE.md` files: they are staged and drift-checked but never
-granted to Claude. After the refresh, the same script adds the import for an
+granted to Claude. After the refresh, the same pass adds the import for an
 `AGENTS.md` Claude created. A layout change alone opens the PR, and Claude records it
 in the repository's changelog.
+
+### Instruction files
+
+Which instruction files a repository keeps is a setting, with a default for each
+provider:
+
+| Setting | When on | When off | GitHub | Azure DevOps |
+|---|---|---|---|---|
+| `agents` | Claude may create a root `AGENTS.md` where there is none | None is created; existing `AGENTS.md` files are still refreshed | on | on |
+| `claude` | Every `CLAUDE.md` beside an `AGENTS.md` is exactly `@AGENTS.md` | Legacy `CLAUDE.md` text still moves into `AGENTS.md`, then the `CLAUDE.md` files are removed | on | on |
+| `copilot` | `.github/copilot-instructions.md` and the `.github/skills/code-review/` skill may be created and are refreshed | Those two are removed; other `.github/` content is untouched | on | off |
+
+A flag on `refresh-docs run` (`--agents`, `--claude`, `--copilot`) beats
+`refresh.instruction_files` in the configuration, which beats the provider's
+default. A removal is the host's, never Claude's: the layout pass deletes the files
+before the audit, the manifest lists them under `removed` (staged and drift-checked,
+never granted), the prompt tells Claude not to recreate them and to record the
+removal, and the deletion alone opens the PR.
 
 ## Usage
 
 Every workflow runs on cron; no manual action is needed in steady state.
 
 Manual trigger — one-off config-and-docs refresh against a single repo. Pass
-`owner/name` to reach any configured owner; a bare name uses the first one. A fork
-or an archived repository is refused with an error, as the scheduled run leaves
-them out:
+`owner/name` to reach any configured owner; a bare name uses the first one. A fork,
+an archived or a disabled repository is refused with an error, as the scheduled run
+leaves them out:
 
 ```bash
 gh workflow run config-and-docs-refresh.yaml -R rios0rios0/config-automation -f repo=autobump
@@ -197,6 +218,99 @@ gh workflow run sonar-analysis-policy.yaml -R rios0rios0/config-automation -f dr
 gh workflow run sonar-analysis-policy.yaml -R rios0rios0/config-automation -f project=autobump
 ```
 
+### The `refresh-docs` CLI
+
+The refresh reads its organizations from a configuration file, `.config-automation.yaml`
+here, in the `providers:` vocabulary the other fleet automations use:
+
+```yaml
+providers:
+  - type: 'github'                      # or 'azuredevops'; one platform per file
+    token: '${PERSONAL_ACCESS_TOKEN}'   # `${VAR}` reads the environment
+    organizations: ['rios0rios0']       # an Azure DevOps organization may be its URL
+    credential: 'PERSONAL_ACCESS_TOKEN' # opaque label discovery passes to each batch
+refresh:
+  exclude: ['<owner-or-project>/<name>']
+  instruction_files: { copilot: false } # overrides the provider's defaults
+  guide_url: 'https://github.com/rios0rios0/guide/wiki' # '' turns the guide rule off
+  git: { user_name: 'config-bot', user_email: 'config-bot@users.noreply.github.com' }
+  pull_request: { source: 'Automated weekly refresh by ...' }
+```
+
+```bash
+# Enumerate every configured organization into CI matrix batches; `--repo`
+# narrows to one (`owner/name` on GitHub, `project/name` on Azure DevOps)
+refresh-docs discover --config .config-automation.yaml [--repo <repo>] [--batch-size 10]
+
+# Refresh one batch (JSON from `discover`, or the REPOS variable) with the token
+# in GH_TOKEN (GitHub) or AZURE_DEVOPS_PAT (Azure DevOps), or in --token-env
+refresh-docs run --config .config-automation.yaml --batch '<json>' [--copilot=false]
+
+# The layout and manifest steps on their own, for a local clone
+refresh-docs layout [--provider github|azuredevops] <repository>
+refresh-docs scope [--provider github|azuredevops] <repository>
+```
+
+Output follows the CI it runs in (`--ci auto`, the default): GitHub Actions workflow
+commands, Azure Pipelines logging commands, or plain text. Repository-controlled text
+never reaches either CI as a command: on GitHub Actions it runs between
+`::stop-commands::` and a random resume token, and on Azure Pipelines every
+`##vso[` in it is defused, whatever its case.
+
+### Running on Azure DevOps
+
+`azure-devops/jobs/refresh-config-and-docs.yaml` runs the same refresh as Azure
+Pipelines jobs. Its consumer declares this repository as a resource at a release
+tag, pins the tag's commit, and checks that pin in a stage of its own before the
+refresh stage starts, since a tag can be moved:
+
+```yaml
+resources:
+  repositories:
+    - repository: 'config_automation'
+      type: 'github'
+      name: 'rios0rios0/config-automation'
+      endpoint: '<github-service-connection>'
+      ref: 'refs/tags/<release>'
+
+variables:
+  - group: '<variable-group>'   # AZURE_DEVOPS_PAT and CLAUDE_CODE_OAUTH_TOKEN (secrets)
+  - name: 'configAutomationSha'
+    value: '<full commit SHA of the release tag>'
+
+stages:
+  - stage: 'verify_source'
+    jobs:
+      - job: 'verify'
+        steps:
+          - checkout: 'none'
+          - bash: test "${ACTUAL}" = "${EXPECTED}"
+            env:
+              ACTUAL: '$(resources.repositories.config_automation.version)'
+              EXPECTED: '$(configAutomationSha)'
+  - stage: 'refresh'
+    dependsOn: 'verify_source'
+    jobs:
+      - template: 'azure-devops/jobs/refresh-config-and-docs.yaml@config_automation'
+        parameters:
+          expectedSha: '${{ variables.configAutomationSha }}'
+          configFile: '.config-automation.yaml'
+          environment:                # the variables its configuration reads
+            GIT_USER_NAME: '$(GIT_USER_NAME)'
+            GIT_USER_EMAIL: '$(GIT_USER_EMAIL)'
+```
+
+The consumer's `.config-automation.yaml` names its organization with
+`type: 'azuredevops'` and `token: '${AZURE_DEVOPS_PAT}'`; any other `${VAR}` it reads
+must be mapped through `environment`, since a step sees no secret variable unless it
+is mapped. The template also takes `repo` (one `project/name`), `batchSize`,
+`maxParallel`, and `maxTurns`, re-checks the
+pinned commit after every checkout, installs Go from this repository's `go.mod`, and
+reads `CLAUDE_MODEL` and `CLAUDE_EFFORT` from the consumer's variables when set. To
+upgrade, change the tag and the SHA together.
+
+### The `harden-repos` CLI
+
 Locally, the CLI supports the full phase model:
 
 ```bash
@@ -212,7 +326,7 @@ HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --phase 4 --
 # Preview every phase without mutating anything
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --dry-run
 
-# List target repos for the config-and-docs refresh matrix (JSON on stdout)
+# List the non-fork non-archived repos as JSON (the release reconciliation's matrix)
 HARDEN_OWNER=rios0rios0,medhub-life,prefy go run ./cmd/harden-repos --list-json
 
 # Re-audit and diff against the before snapshot
@@ -231,24 +345,26 @@ go run ./cmd/harden-repos --sonar-policy --dry-run --repo autobump
 config-automation/
 ├── cmd/
 │   ├── harden-repos/               # CLI entry point + composition root (container.go)
-│   └── refresh-docs/               # `layout` and `scope` for the config-and-docs refresh
+│   └── refresh-docs/               # discover, run, layout, scope: the config-and-docs refresh, CI presenters
 ├── internal/
 │   ├── domain/
-│   │   ├── commands/               # one command per phase + --list-json + --dry-run, refresh scope and layout
-│   │   ├── entities/               # Repository, AuditResult, SonarProject, RefreshScope, AgentsLayoutReport, etc.
-│   │   └── repositories/           # ports: repos, security, branch protection, Sonar projects, Git working tree
+│   │   ├── commands/               # harden-repos phases; refresh discovery, batch, scope and layout
+│   │   ├── entities/               # Repository, AuditResult, RefreshTarget, RefreshScope, the refresh prompt, etc.
+│   │   └── repositories/           # ports: repos, security, branch protection, Sonar, git, agent, pull requests
 │   └── infrastructure/
-│       └── repositories/           # go-github, SonarQube Cloud, and git CLI adapters that implement the ports
+│       └── repositories/           # go-github, gitforge, SonarQube Cloud, git, and Claude Code adapters
 ├── test/
 │   ├── domain/
 │   │   ├── builders/               # RepositoryBuilder, AuditResultBuilder
 │   │   ├── doubles/repositories/   # in-memory doubles preferred over mocks per the test rules
 │   │   └── fixtures/               # refresh paths shared by the scope and batch tests
-│   └── scripts/                    # Go tests that run the refresh's shell against local repositories
-├── .github/workflows/              # four scheduled workflows that run this CLI
+│   └── scripts/                    # Go tests that run the release reconciliation's shell
+├── .github/workflows/              # four scheduled workflows that run these CLIs
+├── azure-devops/                   # jobs template that runs the refresh on Azure Pipelines
+├── .config-automation.yaml         # the organizations the GitHub refresh walks
 └── scripts/
-    ├── audit-and-refresh.sh               # read-only prompt audit followed by scoped edits
-    └── refresh_config_and_docs_prompt.md   # prompt consumed by the config-and-docs refresh workflow
+    ├── install-refresh-tools.sh    # Claude Code CLI, checksum-verified chlog, refresh-docs: one pin list
+    └── reconcile-repos.sh          # the release reconciliation's per-repository loop
 ```
 
 The CLI follows the 5-phase compliance model:
@@ -312,7 +428,8 @@ make build           # compile bin/harden-repos
 make test            # run unit tests (// given / // when / // then BDD style)
 make lint            # golangci-lint
 make sast            # full SAST suite via rios0rios0/pipelines
-go test -count=1 ./test/scripts/...  # audit/refresh orchestration against local repositories
+go test -count=1 ./cmd/refresh-docs/...  # the refresh end to end against local repositories and a fake Claude CLI
+go test -count=1 ./test/scripts/...      # the release reconciliation's shell against local repositories
 make run ARGS='--phase 1 --repo autobump'
 ```
 

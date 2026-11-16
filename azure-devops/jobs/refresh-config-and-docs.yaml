@@ -1,0 +1,116 @@
+# The config-and-docs refresh as Azure Pipelines jobs: `discover` lists the
+# organizations of the consumer's configuration file into a matrix, and each
+# `refresh` leg runs `refresh-docs run` on one batch. The consumer owns the
+# stage around these jobs, its condition and its `dependsOn`, and its
+# variables, which must provide the secrets AZURE_DEVOPS_PAT and
+# CLAUDE_CODE_OAUTH_TOKEN; it may also set CLAUDE_MODEL and CLAUDE_EFFORT. Every
+# value here is a parameter, so this template carries no organization's data.
+parameters:
+  # The repository resource alias under which the consumer declares this repository.
+  - name: 'toolRepository'
+    type: 'string'
+    default: 'config_automation'
+  # The full commit SHA the consumer pinned that resource's tag to.
+  - name: 'expectedSha'
+    type: 'string'
+  # The configuration file, relative to the consumer's repository root.
+  - name: 'configFile'
+    type: 'string'
+    default: '.config-automation.yaml'
+  # Refresh one repository, as `project/name`, instead of the whole organization.
+  - name: 'repo'
+    type: 'string'
+    default: ''
+  - name: 'batchSize'
+    type: 'number'
+    default: 25
+  - name: 'maxParallel'
+    type: 'number'
+    default: 2
+  - name: 'maxTurns'
+    type: 'number'
+    default: 50
+  # More variables for both steps, as `NAME: '$(variable)'`: whatever `${VAR}`
+  # the configuration file reads, such as the git identity. Azure Pipelines
+  # gives a step only its non-secret variables unless they are mapped.
+  - name: 'environment'
+    type: 'object'
+    default: {}
+
+jobs:
+  - job: 'discover'
+    displayName: 'Enumerate and batch target repositories'
+    steps:
+      - template: '../steps/refresh-tool-checkout.yaml'
+        parameters:
+          toolRepository: '${{ parameters.toolRepository }}'
+          expectedSha: '${{ parameters.expectedSha }}'
+
+      - bash: |
+          set -euo pipefail
+          arguments=(--config "$(Pipeline.Workspace)/consumer/${CONFIG_FILE}" --batch-size "${BATCH_SIZE}" --ci azure-pipelines)
+          if [ -n "${REPO}" ]; then
+            arguments+=(--repo "${REPO}")
+          fi
+          go run ./cmd/refresh-docs discover "${arguments[@]}"
+        workingDirectory: '$(Pipeline.Workspace)/tool'
+        env:
+          AZURE_DEVOPS_PAT: '$(AZURE_DEVOPS_PAT)'
+          CONFIG_FILE: '${{ parameters.configFile }}'
+          BATCH_SIZE: '${{ parameters.batchSize }}'
+          REPO: '${{ parameters.repo }}'
+          ${{ each variable in parameters.environment }}:
+            ${{ variable.key }}: '${{ variable.value }}'
+        name: 'set_matrix'
+        displayName: 'Build the batched matrix'
+
+  - job: 'refresh'
+    # Azure DevOps appends the matrix key to a matrix job's display name, so
+    # this renders as `Refresh batch_02`.
+    displayName: 'Refresh'
+    dependsOn: 'discover'
+    condition: and(succeeded(), ne(dependencies.discover.outputs['set_matrix.count'], '0'))
+    timeoutInMinutes: 240
+    strategy:
+      maxParallel: ${{ parameters.maxParallel }}
+      matrix: $[ dependencies.discover.outputs['set_matrix.repoMatrix'] ]
+    variables:
+      refreshModel: $[ coalesce(variables['CLAUDE_MODEL'], 'claude-opus-5-5') ]
+      # Opus 5.5 runs at `medium` effort in Claude Code unless told otherwise.
+      refreshEffort: $[ coalesce(variables['CLAUDE_EFFORT'], 'high') ]
+    steps:
+      - template: '../steps/refresh-tool-checkout.yaml'
+        parameters:
+          toolRepository: '${{ parameters.toolRepository }}'
+          expectedSha: '${{ parameters.expectedSha }}'
+
+      # Claude Code declares `engines.node >=22.0.0`; npm only warns
+      # (EBADENGINE) below that floor, so keep this major at or above it.
+      - task: 'UseNode@1'
+        inputs:
+          version: '22.x'
+        displayName: 'Install Node.js 22'
+
+      - bash: |
+          set -euo pipefail
+          scripts/install-refresh-tools.sh "$(Agent.TempDirectory)/refresh-bin"
+          echo "##vso[task.prependpath]$(Agent.TempDirectory)/refresh-bin"
+        workingDirectory: '$(Pipeline.Workspace)/tool'
+        displayName: 'Install refresh tools'
+
+      - bash: |
+          set -euo pipefail
+          refresh-docs run --config "$(Pipeline.Workspace)/consumer/${CONFIG_FILE}" \
+            --work-dir "$(Agent.TempDirectory)/refresh-work" --ci azure-pipelines
+        workingDirectory: '$(Pipeline.Workspace)/tool'
+        env:
+          AZURE_DEVOPS_PAT: '$(AZURE_DEVOPS_PAT)'
+          CLAUDE_CODE_OAUTH_TOKEN: '$(CLAUDE_CODE_OAUTH_TOKEN)'
+          CLAUDE_MODEL: '$(refreshModel)'
+          CLAUDE_EFFORT: '$(refreshEffort)'
+          CONFIG_FILE: '${{ parameters.configFile }}'
+          REPOS: '$(repos)'
+          MAX_TURNS: '${{ parameters.maxTurns }}'
+          ${{ each variable in parameters.environment }}:
+            ${{ variable.key }}: '${{ variable.value }}'
+        displayName: 'Process batch'

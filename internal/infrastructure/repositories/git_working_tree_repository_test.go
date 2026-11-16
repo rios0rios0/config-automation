@@ -60,7 +60,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		writeFiles(t, root, map[string]string{"README.md": "# Read me\n", "untracked.md": "new\n"})
 		require.NoError(t, os.Symlink("README.md", filepath.Join(root, "CLAUDE.md")))
 		runGit(t, root, "add", "--", "README.md", "CLAUDE.md")
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		entries, err := repository.FindIndexEntries(t.Context(), root)
@@ -84,7 +84,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 			"local/AGENTS.md": "# Local\n",
 		})
 		runGit(t, root, "add", "--", ".gitignore", "AGENTS.md")
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		files, err := repository.FindFiles(t.Context(), root)
@@ -100,7 +100,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		root := newWorkingTree(t)
 		writeFiles(t, root, map[string]string{"docs/README.md": "# Docs\n"})
 		require.NoError(t, os.Symlink("docs", filepath.Join(root, "linked")))
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 		expected := map[string]entities.PathKind{
 			"docs": entities.PathDirectory, "docs/README.md": entities.PathFile, "linked": entities.PathSymlink,
 			"missing.md": entities.PathAbsent, "docs/README.md/below.md": entities.PathAbsent,
@@ -122,7 +122,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		root := newWorkingTree(t)
 		writeFiles(t, root, map[string]string{".gitignore": "AGENTS.md\n", "AGENTS.md": "# Guidance\n"})
 		runGit(t, root, "add", "--force", "--", ".gitignore", "AGENTS.md")
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		ignored, err := repository.IsIgnored(t.Context(), root, "AGENTS.md")
@@ -142,7 +142,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		writeFiles(t, root, map[string]string{"CLAUDE.md": "# Guidance\n\nmake test\n"})
 		runGit(t, root, "add", "--", "CLAUDE.md")
 		runGit(t, root, "commit", "--quiet", "-m", "Initial fixture")
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		require.NoError(t, repository.Move(t.Context(), root, "CLAUDE.md", "AGENTS.md"))
@@ -160,7 +160,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		writeFiles(t, root, map[string]string{".gitignore": "/local/\n", "local/AGENTS.md": "# Local\n"})
 		runGit(t, root, "add", "--force", "--", ".gitignore", "local/AGENTS.md")
 		writeFiles(t, root, map[string]string{"local/AGENTS.md": "# Changed\n"})
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		err := repository.Stage(t.Context(), root, []string{"local/AGENTS.md"})
@@ -177,7 +177,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		require.NoError(t, os.Symlink("CLAUDE.md", filepath.Join(root, "LINK.md")))
 		runGit(t, root, "add", "--", "AGENTS.md")
 		runGit(t, root, "commit", "--quiet", "-m", "Initial fixture")
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		saveErr := repository.SaveContent(t.Context(), root, "CLAUDE.md", []byte(entities.AgentsImport))
@@ -203,7 +203,7 @@ func TestGitWorkingTreeRepository(t *testing.T) {
 		t.Parallel()
 		// given
 		root := t.TempDir()
-		repository := repositories.NewGitWorkingTreeRepository()
+		repository := repositories.NewGitWorkingTreeRepository(entities.GitIdentity{})
 
 		// when
 		_, err := repository.FindFiles(t.Context(), root)

@@ -15,19 +15,23 @@ import (
 // layoutHandler settles one pair and returns what it did.
 type layoutHandler func(ctx context.Context, root string, pair entities.LayoutPair) (entities.LayoutOutcome, error)
 
-// NormalizeAgentsLayoutCommand keeps AGENTS.md as the instruction file and
-// every CLAUDE.md beside one as the import of it, deterministically, before
-// any model runs. A pair it cannot change safely is reported and left alone.
+// NormalizeAgentsLayoutCommand keeps AGENTS.md as the instruction file and,
+// deterministically, before any model runs, either every CLAUDE.md beside one
+// as the import of it or no CLAUDE.md at all, and removes the Copilot files
+// of a repository that keeps none. A pair it cannot change safely is reported
+// and left alone. A removal is left unstaged, so the file stays in the index
+// and the refresh stages its deletion like any other tracked deletion.
 type NormalizeAgentsLayoutCommand struct {
-	workingTree repositories.WorkingTreeRepository
-	handlers    map[entities.LayoutPairState]layoutHandler
+	workingTree    repositories.WorkingTreeRepository
+	withImports    map[entities.LayoutPairState]layoutHandler
+	withoutImports map[entities.LayoutPairState]layoutHandler
 }
 
 // NewNormalizeAgentsLayoutCommand is the constructor the composition root calls. A pair
 // whose state has no handler is skipped.
 func NewNormalizeAgentsLayoutCommand(workingTree repositories.WorkingTreeRepository) *NormalizeAgentsLayoutCommand {
 	command := &NormalizeAgentsLayoutCommand{workingTree: workingTree}
-	command.handlers = map[entities.LayoutPairState]layoutHandler{
+	command.withImports = map[entities.LayoutPairState]layoutHandler{
 		{Claude: entities.SideFile, Agents: entities.SideFile}:      command.merge,
 		{Claude: entities.SideAbsent, Agents: entities.SideFile}:    command.point,
 		{Claude: entities.SideLink, Agents: entities.SideFile}:      command.point,
@@ -35,12 +39,25 @@ func NewNormalizeAgentsLayoutCommand(workingTree repositories.WorkingTreeReposit
 		{Claude: entities.SidePointer, Agents: entities.SideFile}:   command.keep,
 		{Claude: entities.SideAbsent, Agents: entities.SideAbsent}:  command.keep,
 	}
+	// Without imports a CLAUDE.md never survives the pass: what it holds moves
+	// into AGENTS.md first (a lone one is renamed before the pairs settle), and
+	// an import or a symlink carries nothing to keep.
+	command.withoutImports = map[entities.LayoutPairState]layoutHandler{
+		{Claude: entities.SideFile, Agents: entities.SideFile}:      command.mergeAndRemove,
+		{Claude: entities.SideAbsent, Agents: entities.SideFile}:    command.keep,
+		{Claude: entities.SideLink, Agents: entities.SideFile}:      command.remove,
+		{Claude: entities.SidePointer, Agents: entities.SideAbsent}: command.remove,
+		{Claude: entities.SidePointer, Agents: entities.SideFile}:   command.remove,
+		{Claude: entities.SideAbsent, Agents: entities.SideAbsent}:  command.keep,
+	}
 	return command
 }
 
-// NormalizeAgentsLayoutInput names the working tree to normalize.
+// NormalizeAgentsLayoutInput names the working tree to normalize and the
+// instruction files it keeps.
 type NormalizeAgentsLayoutInput struct {
-	Root string
+	Root             string
+	InstructionFiles entities.InstructionFiles
 }
 
 // NormalizeAgentsLayoutListeners receives the report or the failure.
@@ -57,7 +74,7 @@ func (c *NormalizeAgentsLayoutCommand) Execute(
 	input NormalizeAgentsLayoutInput,
 	listeners NormalizeAgentsLayoutListeners,
 ) {
-	report, err := c.normalize(ctx, input.Root)
+	report, err := c.normalize(ctx, input.Root, input.InstructionFiles)
 	if err != nil {
 		listeners.OnError(err)
 		return
@@ -68,13 +85,18 @@ func (c *NormalizeAgentsLayoutCommand) Execute(
 func (c *NormalizeAgentsLayoutCommand) normalize(
 	ctx context.Context,
 	root string,
+	files entities.InstructionFiles,
 ) (entities.AgentsLayoutReport, error) {
 	report := entities.NewAgentsLayoutReport()
+	report.NoImports = !files.Claude
 	if err := c.renameLegacyFiles(ctx, root, &report); err != nil {
 		return report, err
 	}
-	touched, err := c.settlePairs(ctx, root, &report)
+	touched, err := c.settlePairs(ctx, root, files, &report)
 	if err != nil {
+		return report, err
+	}
+	if err = c.removeCopilotFiles(ctx, root, files, &report); err != nil {
 		return report, err
 	}
 	if len(touched) > 0 {
@@ -82,9 +104,48 @@ func (c *NormalizeAgentsLayoutCommand) normalize(
 			return report, fmt.Errorf("staging the layout: %w", err)
 		}
 	}
-	report.Changed = len(report.Renamed) > 0 || len(touched) > 0
+	report.Changed = len(report.Renamed) > 0 || len(touched) > 0 || len(report.Removed) > 0
 	report.Note = entities.DescribeAgentsLayout(report)
 	return report, nil
+}
+
+// removeCopilotFiles deletes the Copilot instruction files of a repository
+// that keeps none, tracked or new, under safe parents only, so a symlinked
+// directory can never point the deletion outside the working tree.
+func (c *NormalizeAgentsLayoutCommand) removeCopilotFiles(
+	ctx context.Context,
+	root string,
+	files entities.InstructionFiles,
+	report *entities.AgentsLayoutReport,
+) error {
+	if files.Copilot {
+		return nil
+	}
+	listed, err := c.workingTree.FindFiles(ctx, root)
+	if err != nil {
+		return fmt.Errorf("listing files: %w", err)
+	}
+	for _, file := range listed {
+		if entities.IsPairPath(file) || !entities.IsRefreshPath(file) || !files.IsRemovedPath(file) {
+			continue
+		}
+		safe, safeErr := hasSafeParents(ctx, c.workingTree, root, file)
+		if safeErr != nil {
+			return safeErr
+		}
+		kind, kindErr := c.workingTree.FindKind(ctx, root, file)
+		if kindErr != nil {
+			return fmt.Errorf("inspecting %s: %w", file, kindErr)
+		}
+		if !safe || (kind != entities.PathFile && kind != entities.PathSymlink) {
+			continue
+		}
+		if err = c.workingTree.Delete(ctx, root, file); err != nil {
+			return fmt.Errorf("removing %s: %w", file, err)
+		}
+		report.Record(entities.OutcomeRemoved, file)
+	}
+	return nil
 }
 
 // renameLegacyFiles moves every CLAUDE.md that has no AGENTS.md, or only a
@@ -130,41 +191,68 @@ func (c *NormalizeAgentsLayoutCommand) renameLegacyFiles(
 func (c *NormalizeAgentsLayoutCommand) settlePairs(
 	ctx context.Context,
 	root string,
+	files entities.InstructionFiles,
 	report *entities.AgentsLayoutReport,
 ) (map[string]bool, error) {
 	pairs, err := c.pairs(ctx, root)
 	if err != nil {
 		return nil, err
 	}
+	handlers := c.withImports
+	if !files.Claude {
+		handlers = c.withoutImports
+	}
 	touched := map[string]bool{}
 	for _, pair := range pairs {
-		handler, found := c.handlers[pair.State]
+		handler, found := handlers[pair.State]
 		if !found {
 			handler = c.skip
 		}
-		outcome, handlerErr := handler(ctx, root, pair)
-		if handlerErr != nil {
-			return nil, handlerErr
-		}
-		if outcome != entities.OutcomePointed || !slices.Contains(report.Renamed, pair.Claude) {
-			report.Record(outcome, pair.Claude)
-		}
-		if outcome == entities.OutcomeSkipped {
-			continue
-		}
-		if outcome == entities.OutcomeMerged || outcome == entities.OutcomePointed {
-			touched[pair.Claude], touched[pair.Agents] = true, true
-		}
-		rebannered, rebannerErr := c.rebanner(ctx, root, pair)
-		if rebannerErr != nil {
-			return nil, rebannerErr
-		}
-		if rebannered {
-			touched[pair.Agents] = true
-			report.Record(entities.OutcomeRebannered, pair.Agents)
+		if err = c.settlePair(ctx, root, files, pair, handler, report, touched); err != nil {
+			return nil, err
 		}
 	}
 	return touched, nil
+}
+
+// settlePair runs one pair through its handler, records the outcome, and
+// marks the files it changed in touched.
+func (c *NormalizeAgentsLayoutCommand) settlePair(
+	ctx context.Context,
+	root string,
+	files entities.InstructionFiles,
+	pair entities.LayoutPair,
+	handler layoutHandler,
+	report *entities.AgentsLayoutReport,
+	touched map[string]bool,
+) error {
+	outcome, err := handler(ctx, root, pair)
+	if err != nil {
+		return err
+	}
+	if outcome != entities.OutcomePointed || !slices.Contains(report.Renamed, pair.Claude) {
+		report.Record(outcome, pair.Claude)
+	}
+	if outcome == entities.OutcomeSkipped {
+		return nil
+	}
+	if outcome == entities.OutcomeMerged || outcome == entities.OutcomePointed {
+		touched[pair.Agents] = true
+		// A removed CLAUDE.md stays unstaged, so its index entry is what the
+		// refresh stages as the deletion.
+		if files.Claude {
+			touched[pair.Claude] = true
+		}
+	}
+	rebannered, err := c.rebanner(ctx, root, pair)
+	if err != nil {
+		return err
+	}
+	if rebannered {
+		touched[pair.Agents] = true
+		report.Record(entities.OutcomeRebannered, pair.Agents)
+	}
+	return nil
 }
 
 // pairs lists every directory holding a tracked or new CLAUDE.md or
@@ -283,20 +371,58 @@ func (c *NormalizeAgentsLayoutCommand) merge(
 	root string,
 	pair entities.LayoutPair,
 ) (entities.LayoutOutcome, error) {
+	if err := c.mergeGuidance(ctx, root, pair); err != nil {
+		return entities.OutcomeKept, err
+	}
+	return entities.OutcomeMerged, c.writeImport(ctx, root, pair.Claude)
+}
+
+// mergeAndRemove keeps what a CLAUDE.md adds beside an existing AGENTS.md,
+// for the refresh to integrate, and then removes CLAUDE.md, in a repository
+// that keeps none.
+func (c *NormalizeAgentsLayoutCommand) mergeAndRemove(
+	ctx context.Context,
+	root string,
+	pair entities.LayoutPair,
+) (entities.LayoutOutcome, error) {
+	if err := c.mergeGuidance(ctx, root, pair); err != nil {
+		return entities.OutcomeKept, err
+	}
+	if err := c.workingTree.Delete(ctx, root, pair.Claude); err != nil {
+		return entities.OutcomeKept, fmt.Errorf("removing %s: %w", pair.Claude, err)
+	}
+	return entities.OutcomeMerged, nil
+}
+
+// mergeGuidance appends what the CLAUDE.md of a pair adds to its AGENTS.md.
+func (c *NormalizeAgentsLayoutCommand) mergeGuidance(ctx context.Context, root string, pair entities.LayoutPair) error {
 	claude, err := c.workingTree.FindContent(ctx, root, pair.Claude)
 	if err != nil {
-		return entities.OutcomeKept, fmt.Errorf("reading %s: %w", pair.Claude, err)
+		return fmt.Errorf("reading %s: %w", pair.Claude, err)
 	}
 	agents, err := c.workingTree.FindContent(ctx, root, pair.Agents)
 	if err != nil {
-		return entities.OutcomeKept, fmt.Errorf("reading %s: %w", pair.Agents, err)
+		return fmt.Errorf("reading %s: %w", pair.Agents, err)
 	}
 	if merged, changed := entities.MergedAgentsGuidance(string(agents), string(claude)); changed {
 		if err = c.workingTree.SaveContent(ctx, root, pair.Agents, []byte(merged)); err != nil {
-			return entities.OutcomeKept, fmt.Errorf("writing %s: %w", pair.Agents, err)
+			return fmt.Errorf("writing %s: %w", pair.Agents, err)
 		}
 	}
-	return entities.OutcomeMerged, c.writeImport(ctx, root, pair.Claude)
+	return nil
+}
+
+// remove deletes a CLAUDE.md that carries nothing to keep, an import or a
+// symlink, in a repository that keeps none.
+func (c *NormalizeAgentsLayoutCommand) remove(
+	ctx context.Context,
+	root string,
+	pair entities.LayoutPair,
+) (entities.LayoutOutcome, error) {
+	if err := c.workingTree.Delete(ctx, root, pair.Claude); err != nil {
+		return entities.OutcomeKept, fmt.Errorf("removing %s: %w", pair.Claude, err)
+	}
+	return entities.OutcomeRemoved, nil
 }
 
 // point writes the import beside an AGENTS.md, replacing a symlink itself

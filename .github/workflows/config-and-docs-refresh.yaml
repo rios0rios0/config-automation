@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner). A fork or an archived repo is refused, as on the schedule.'
+        description: 'Target a single repo as `owner/name`, or a bare `name` to use the first configured owner (optional, defaults to all non-fork non-archived across every owner). A fork, an archived or a disabled repo is refused, as on the schedule.'
         required: false
         type: 'string'
       batch_size:
@@ -36,22 +36,10 @@ jobs:
     runs-on: 'ubuntu-latest'
     permissions:
       contents: 'read'
-    env:
-      # Owners to enumerate, each paired with the secret holding its token. A
-      # fine-grained PAT is bound to a single resource owner, so one token can never
-      # span all of them; enumeration therefore runs once per owner with that owner's
-      # credential. Adding an owner means adding an entry here plus its `TOKEN_*` env
-      # line on the `Build matrix` step.
-      OWNERS: >-
-        [{"name": "rios0rios0", "secret": "PERSONAL_ACCESS_TOKEN"},
-         {"name": "medhub-life", "secret": "MEDHUB_ACCESS_TOKEN"},
-         {"name": "prefy", "secret": "PREFY_ACCESS_TOKEN"}]
-      # A bare `repo` input keeps its old ergonomics by resolving against this owner.
-      DEFAULT_OWNER: 'rios0rios0'
     outputs:
-      matrix: ${{ steps.build-matrix.outputs.matrix }}
-      count: ${{ steps.build-matrix.outputs.count }}
-      failed_owners: ${{ steps.build-matrix.outputs.failed_owners }}
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+      failed_organizations: ${{ steps.discover.outputs.failed_organizations }}
     steps:
       - name: 'Checkout config-automation'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
@@ -67,149 +55,29 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      # Enumerates repos via `harden-repos --list-json` (or the single-repo
-      # override), then chunks the sorted array into fixed-size batches so
-      # the matrix has O(repos / batch_size) legs instead of one leg per
-      # repo. Each leg loops through its batch internally --- trades a
-      # little per-repo log isolation for a dramatically cleaner
-      # pipeline-run UI as the org grows.
-      - name: 'Build matrix'
-        id: 'build-matrix'
+      # `refresh-docs discover` lists every owner in `.config-automation.yaml`
+      # with that owner's own token, since a fine-grained PAT reaches one
+      # resource owner only, and chunks each owner's repos into batches so
+      # every matrix leg carries one credential. An owner it cannot reach is
+      # reported and the rest are still batched; the `verify` job below then
+      # turns the run red. Every token's lifetime must be 366 days or less:
+      # `medhub-life` and `prefy` reject longer-lived fine-grained tokens with
+      # a 403. The tokens live in this step only, out of checkout and setup.
+      - name: 'Discover'
+        id: 'discover'
         env:
-          # One fine-grained PAT per owner, looked up in the script as
-          # `TOKEN_<owner with '-' replaced by '_'>`. Every token's lifetime must be
-          # 366 days or less: `medhub-life` and `prefy` reject longer-lived fine-grained
-          # tokens with `403 ... forbids access via a fine-grained personal access tokens
-          # if the token's lifetime is greater than 366 days`.
-          # Scoped to this step only so the PATs aren't exposed to checkout/setup steps.
-          TOKEN_rios0rios0: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          TOKEN_medhub_life: ${{ secrets.MEDHUB_ACCESS_TOKEN }}
-          TOKEN_prefy: ${{ secrets.PREFY_ACCESS_TOKEN }}
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          MEDHUB_ACCESS_TOKEN: ${{ secrets.MEDHUB_ACCESS_TOKEN }}
+          PREFY_ACCESS_TOKEN: ${{ secrets.PREFY_ACCESS_TOKEN }}
           REPO_INPUT: ${{ inputs.repo }}
           BATCH_SIZE: ${{ inputs.batch_size || 10 }}
         run: |
           set -euo pipefail
-          # `inputs.batch_size` is a free-form workflow_dispatch value that
-          # flows into `jq` as `range(0; length; $batchSize)`. A 0, negative,
-          # or non-integer value would crash jq or produce an empty matrix,
-          # so normalize to a positive integer (fall back to 10 otherwise).
-          if ! [[ "${BATCH_SIZE}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "Warning: invalid batch_size='${BATCH_SIZE}', falling back to 10." >&2
-            BATCH_SIZE=10
-          fi
-          # Resolves the per-owner PAT exposed as TOKEN_<owner with '-' replaced by '_'>.
-          owner_token() {
-            local var="TOKEN_${1//-/_}"
-            printf '%s' "${!var:-}"
-          }
-
-          # Resolves the secret NAME for an owner, so each batch can tell the refresh
-          # job which credential to clone and push with.
-          owner_secret() {
-            printf '%s' "${OWNERS}" | jq -r --arg o "$1" '.[] | select(.name == $o) | .secret'
-          }
-
-          failed_owners=()
-
+          arguments=(--config .config-automation.yaml --batch-size "${BATCH_SIZE}")
           if [ -n "${REPO_INPUT}" ]; then
-            # Single-repo override for workflow_dispatch testing. Uses gh's
-            # built-in `gh api` so we don't spin up the Go binary just to
-            # fetch one default_branch. Accepts `owner/name` so any
-            # configured owner is reachable; a bare `name` keeps the old
-            # ergonomics by defaulting to DEFAULT_OWNER.
-            case "${REPO_INPUT}" in
-              */*) target="${REPO_INPUT}" ;;
-              *)   target="${DEFAULT_OWNER}/${REPO_INPUT}" ;;
-            esac
-            target_owner="${target%%/*}"
-            target_name="${target#*/}"
-            GH_TOKEN="$(owner_token "${target_owner}")"
-            export GH_TOKEN
-            # The same call reads the two flags the scheduled matrix filters on
-            # (`ListTargetRepositoriesCommand` behind `--list-json`), so naming a
-            # repository cannot reach one the schedule leaves out: a fork's
-            # instruction files are its upstream's, and an archived repository is
-            # read-only. It is refused rather than skipped, so the dispatch fails
-            # visibly instead of finishing green with nothing refreshed.
-            repo_meta=$(gh api "/repos/${target}" --jq '{default_branch, fork, archived}')
-            refusal=$(jq -r '[if .fork then "a fork" else empty end, if .archived then "archived" else empty end]
-              | join(" and ")' <<< "${repo_meta}")
-            if [ -n "${refusal}" ]; then
-              echo "::error::Refusing to refresh ${target}: it is ${refusal}, and forks and archived repositories are left out of this workflow."
-              exit 1
-            fi
-            default_branch=$(jq -r '.default_branch' <<< "${repo_meta}")
-            # Built with `jq -n` rather than printf so a name containing
-            # quotes cannot break out of the JSON string.
-            repos=$(jq -cn \
-              --arg o "${target_owner}" \
-              --arg n "${target_name}" \
-              --arg b "${default_branch}" \
-              --arg s "$(owner_secret "${target_owner}")" \
-              '[{owner: $o, name: $n, default_branch: $b, secret: $s}]')
-          else
-            # `--list-json` treats a listing failure for any owner as fatal, so it runs
-            # once per owner with that owner's own token. A single shared token used to
-            # abort the whole enumeration on the first rejected grant, which silently
-            # dropped every owner after it in the list. Now an unreachable owner is
-            # recorded, the reachable ones are still refreshed, and the `verify` job
-            # turns the run red at the end so the gap cannot pass as success.
-            repos='[]'
-            while IFS= read -r owner; do
-              secret="$(owner_secret "${owner}")"
-              token="$(owner_token "${owner}")"
-              if [ -z "${token}" ]; then
-                echo "::error::No token for '${owner}': the '${secret}' secret is empty or not set."
-                failed_owners+=("${owner}")
-                continue
-              fi
-              if ! owner_repos=$(HARDEN_OWNER="${owner}" GH_TOKEN="${token}" \
-                go run ./cmd/harden-repos --list-json 2>"${RUNNER_TEMP}/${owner}.err"); then
-                echo "::error::Could not enumerate '${owner}', so none of its repositories will be refreshed."
-                sed 's/^/  /' "${RUNNER_TEMP}/${owner}.err" >&2
-                failed_owners+=("${owner}")
-                continue
-              fi
-              owner_repos="${owner_repos:-[]}"
-              repos=$(jq -cn \
-                --argjson acc "${repos}" \
-                --argjson add "${owner_repos}" \
-                --arg s "${secret}" \
-                '$acc + ($add | map(. + {secret: $s}))')
-              echo "Enumerated $(printf '%s' "${owner_repos}" | jq 'length') repo(s) in '${owner}'."
-            done < <(printf '%s' "${OWNERS}" | jq -r '.[].name')
+            arguments+=(--repo "${REPO_INPUT}")
           fi
-          # Chunk within each owner rather than across the whole fleet, so every matrix
-          # leg carries exactly one owner and therefore exactly one credential.
-          matrix=$(printf '%s' "${repos}" | jq -c --argjson batchSize "${BATCH_SIZE}" '
-            group_by(.owner)
-            | map(
-                . as $g
-                | ($g[0].owner) as $owner
-                | ($g[0].secret) as $secret
-                | [range(0; ($g | length); $batchSize) as $i
-                   | {
-                       name: ($owner + " batch_" + (((($i / $batchSize) + 1) | floor | tostring) | if length == 1 then "0" + . else . end)),
-                       owner: $owner,
-                       secret: $secret,
-                       repos: ($g[$i : $i + $batchSize] | map(del(.secret)))
-                     }]
-              )
-            | add // []')
-          count=$(printf '%s' "${matrix}" | jq 'length')
-          total=$(printf '%s' "${matrix}" | jq '[.[] | .repos | length] | add // 0')
-          if [ "${#failed_owners[@]}" -eq 0 ]; then
-            failed_json='[]'
-          else
-            failed_json=$(jq -cn '$ARGS.positional' --args "${failed_owners[@]}")
-          fi
-          {
-            echo "matrix=${matrix}"
-            echo "count=${count}"
-            echo "failed_owners=${failed_json}"
-          } >> "${GITHUB_OUTPUT}"
-          echo "Discovered ${total} target repo(s) across ${count} batch(es) of up to ${BATCH_SIZE}."
-          printf '%s' "${matrix}" | jq '[.[] | {name, owner, count: (.repos | length)}]'
+          go run ./cmd/refresh-docs discover "${arguments[@]}"
 
   refresh:
     name: 'Refresh ${{ matrix.batch.name }}'
@@ -224,15 +92,12 @@ jobs:
       # Each matrix leg handles up to `batch_size` repos sequentially; legs
       # themselves run in parallel up to `max_parallel`. The default of 2
       # halves wall-clock vs. fully serial while keeping the steady-state
-      # request rate well inside the Anthropic per-minute budget. Raise
-      # carefully --- a wider parallel burst chews through the per-minute
-      # rate limit and amplifies the cost of the permission-denial loop
-      # that each no-drift repo incurs.
+      # request rate well inside the Anthropic per-minute budget.
       max-parallel: ${{ fromJSON(inputs.max_parallel || '2') }}
       matrix:
         batch: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
-      - name: 'Checkout config-automation (for prompt)'
+      - name: 'Checkout config-automation'
         uses: 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' # v6.0.3
 
       - name: 'Install Node.js 22'
@@ -242,649 +107,43 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: 'Install Claude Code CLI'
-        # /checkup prompt-audit was added in 2.1.283; keep following new releases.
-        run: 'npm install -g "@anthropic-ai/claude-code@>=2.1.283"'
-
-      # `chlog new` is the only way a changelog fragment gets written in a
-      # chlog repository: the prompt is forbidden from typing one and the
-      # allowlist below grants nothing that could. A hand-typed fragment
-      # carries an invented timestamp --- the 2026-09-07 review pass found 47
-      # of them on `main` across 35 repositories, with round nanoseconds, a
-      # `time` hours away from its own filename, siblings one nanosecond
-      # apart, and dates a week in the future --- and `chlog batch` orders a
-      # release section by `time`, so an invented value reorders the
-      # changelog. The binary is a pinned release, verified against the
-      # checksum the release publishes, so every leg runs the same version.
-      - name: 'Install chlog'
-        env:
-          CHLOG_VERSION: '0.4.0'
-          CHLOG_SHA256: 'c3f825869482b397455b0ae5016d17397f900ccfa61adba038a45bea6600c329'
-        run: |
-          set -euo pipefail
-          archive="chlog-${CHLOG_VERSION}-linux-amd64.tar.gz"
-          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/${archive}" \
-            "https://github.com/luizjhonata/chlog/releases/download/v${CHLOG_VERSION}/${archive}"
-          echo "${CHLOG_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
-          mkdir -p "${RUNNER_TEMP}/chlog-bin"
-          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/chlog-bin" chlog
-          echo "${RUNNER_TEMP}/chlog-bin" >> "${GITHUB_PATH}"
-          "${RUNNER_TEMP}/chlog-bin/chlog" --version
-
       # Same pin as the discover job: the `go` directive in go.mod decides
-      # the toolchain, so the helper below builds with the version CI tests.
+      # the toolchain refresh-docs is built with.
       - name: 'Set up Go'
         uses: 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16' # v6.5.0
         with:
           go-version-file: 'go.mod'
           cache: true
 
-      # `refresh-docs layout` moves each clone into the AGENTS.md layout and
-      # `refresh-docs scope` prints its manifest; both come from this
-      # checkout, so a leg never runs a helper other than the one reviewed.
-      - name: 'Build refresh-docs'
+      # The Claude Code CLI, a checksum-verified chlog, and refresh-docs built
+      # from this checkout, pinned in the one script the Azure Pipelines
+      # template runs too.
+      - name: 'Install refresh tools'
         run: |
           set -euo pipefail
-          go build -o "${RUNNER_TEMP}/refresh-docs-bin/refresh-docs" ./cmd/refresh-docs
-          echo "${RUNNER_TEMP}/refresh-docs-bin" >> "${GITHUB_PATH}"
+          scripts/install-refresh-tools.sh "${RUNNER_TEMP}/refresh-bin"
+          echo "${RUNNER_TEMP}/refresh-bin" >> "${GITHUB_PATH}"
 
-      # Tool allowlist locked down to exactly what the refresh prompt
-      # needs: read the repo and edit the exact paths discovered by
-      # `refresh-docs scope` (including existing scoped guidance,
-      # skills, agents, commands, README, and CONTRIBUTING), plus
-      # whichever changelog target that repository's convention calls for
-      # --- see `changelog_mode` in the loop below. A CLAUDE.md that only
-      # imports AGENTS.md is written by `refresh-docs layout` and is
-      # never granted. Without this allowlist,
-      # telemetry showed ~30 `permission_denials_count` per run because the
-      # CLI probes many tools but the default harness denies most of them,
-      # which burned turns and API spend on every no-drift no-op. See
-      # `scripts/refresh_config_and_docs_prompt.md` for the rules that match
-      # the allowlist in scripts/audit-and-refresh.sh. `--max-turns` bounds
-      # each phase so a stuck loop cannot consume the whole job timeout.
-      #
-      # Every grant is spelled `Edit(...)`, never `Write(...)`: the CLI
-      # matches file permissions on `Edit` rules alone --- an `Edit` grant
-      # covers every file-editing tool, including `Write`, while a `Write`
-      # rule is inert and only earns a warning on stderr. Creating a file
-      # the repo did not have is therefore already covered.
-      #
-      # The one grant that is not an `Edit(...)` rule is `Bash(chlog new:*)`,
-      # handed to chlog repositories in place of any write access to
-      # `.changes/unreleased/`. A fragment is then something `chlog new`
-      # produces rather than something the model types: the tool stamps `time`
-      # and names the file from two clock reads microseconds apart, so the
-      # two always agree to the second, which is exactly what the
-      # post-refresh fragment check in the loop verifies.
+      # `refresh-docs run` clones each repo of the batch, moves it into the
+      # AGENTS.md layout, runs the read-only prompt audit and the scoped
+      # refresh, guards the changelog and every added line, and opens or
+      # updates the PR on the refresh branch; README and AGENTS.md describe
+      # each step. A failing repo is recorded and the batch moves on, so the
+      # leg turns red only after its summary.
       - name: 'Process batch ${{ matrix.batch.name }}'
         env:
-          # Every batch is single-owner (the discover job chunks within each owner), so
-          # this resolves to the fine-grained PAT for exactly the owner being processed.
-          # A fine-grained token is bound to one resource owner, so a single shared
-          # secret could never clone and push across all of them.
-          #
-          # Only git and gh use it: git through `git_authenticated` below, gh from
-          # this environment for the PR calls. Claude Code is started without it,
-          # because nothing the agent does needs write access to the owner's
-          # repositories.
-          GH_TOKEN: ${{ secrets[matrix.batch.secret] }}
+          # Every batch is single-owner, so this is the fine-grained PAT of exactly
+          # the owner being processed. git receives it through a credential helper
+          # scoped to github.com, the PR calls through the GitHub API; Claude Code is
+          # started without it.
+          GH_TOKEN: ${{ secrets[matrix.batch.credential] }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
           # Opus 5.5 runs at `medium` effort in Claude Code unless told otherwise.
           CLAUDE_EFFORT: ${{ vars.CLAUDE_EFFORT || 'high' }}
-          # No HARDEN_OWNER here: every repo in the matrix carries its own
-          # `owner`, so this job never has to guess which one it belongs to.
-          REFRESH_BRANCH: 'chore/config-and-docs-refresh'
           REPOS: ${{ toJSON(matrix.batch.repos) }}
           MAX_TURNS: ${{ inputs.max_turns || '50' }}
-        run: |
-          set -euo pipefail
-          git config --global user.name 'config-bot'
-          git config --global user.email 'config-bot@users.noreply.github.com'
-
-          # Every git command that talks to GitHub runs through this, so the owner's
-          # token is never part of a remote URL --- which `git clone` would store in
-          # the clone's `.git/config`, inside the directory Claude Code then works
-          # in --- nor of any command line. git asks the helper for a credential
-          # only when GitHub requests one, and the helper answers from `GH_TOKEN`
-          # at that moment: the snippet is single-quoted, so the variable is
-          # expanded by the shell git starts for it, where `printf` is a builtin.
-          # The empty `credential.helper=` first clears any helper configured on
-          # the runner, so no other helper is asked or stores the token. `-c`
-          # applies to this invocation and its children only; nothing is written.
-          git_authenticated() {
-            git -c credential.helper= \
-              -c 'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "${GH_TOKEN}"; }; f' \
-              "$@"
-          }
-
-          PROMPT_CONTENT="$(cat "${GITHUB_WORKSPACE}/scripts/refresh_config_and_docs_prompt.md")"
-          WORK_DIR="$(mktemp -d)"
-          CLAUDE_LOG="${WORK_DIR}/.claude.log"
-          failed=()
-          prs_created=()
-          prs_updated=()
-          no_drift=()
-          quota_skipped=()
-          safeguard_skipped=()
-          quota_hit=0
-
-          # Every run refreshes every repository in the batch: there is no
-          # activity gate, so a repository's guidance is re-checked against its
-          # code each week whether or not that code moved.
-          # Each clone gets an exact manifest before Claude runs. The same
-          # paths drive edit grants, drift and staging.
-          SCOPE_FILE="${WORK_DIR}/refresh-scope.json"
-          LAYOUT_FILE="${WORK_DIR}/agents-layout.json"
-
-          total=$(echo "${REPOS}" | jq 'length')
-          idx=0
-          # Process substitution (not a pipe) so array mutations persist
-          # outside the loop body.
-          while IFS= read -r repo_json; do
-            idx=$((idx + 1))
-            repo_owner=$(echo "${repo_json}" | jq -r '.owner')
-            repo_name=$(echo "${repo_json}" | jq -r '.name')
-            default_branch=$(echo "${repo_json}" | jq -r '.default_branch')
-            target_repo="${repo_owner}/${repo_name}"
-            # Checkout directory keyed by owner too: two owners can host a
-            # repo of the same name, and a bare-name path would make the
-            # second clone collide with the first inside one batch.
-            target="${WORK_DIR}/${repo_owner}__${repo_name}"
-
-            # If a previous iteration tripped a Claude usage limit (5-hour,
-            # weekly or monthly), skip the rest of the batch --- subsequent claude
-            # invocations will all fail with the same error and just burn
-            # ~3min/repo. The summary still reports them so it's visible
-            # which repos didn't get a chance.
-            if [ "${quota_hit}" -eq 1 ]; then
-              echo "=========== [${idx}/${total}] ${target_repo} (SKIPPED: Claude usage limit hit earlier in batch) ==========="
-              quota_skipped+=("${target_repo}")
-              continue
-            fi
-
-            echo "=========== [${idx}/${total}] ${target_repo} ==========="
-            rm -rf "${target}"
-
-            if ! git_authenticated clone --quiet "https://github.com/${target_repo}.git" "${target}"; then
-              failed+=("clone: ${target_repo}")
-              continue
-            fi
-
-            if ! git -C "${target}" checkout --quiet "${default_branch}"; then
-              failed+=("checkout: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            # AGENTS.md is the instruction file and CLAUDE.md only imports it.
-            # Migrating before scope discovery lets the audit and the refresh
-            # work on the layout the PR proposes; a rename is committed alone
-            # so history follows the file.
-            if ! refresh-docs layout "${target}" > "${LAYOUT_FILE}"; then
-              failed+=("layout: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            jq -r '.skipped[] | "::warning::Left out of the AGENTS.md layout: " + tojson' "${LAYOUT_FILE}"
-
-            if ! refresh-docs scope "${target}" > "${SCOPE_FILE}"; then
-              failed+=("scope: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            mapfile -t IN_SCOPE < <(jq -r '.paths[]' "${SCOPE_FILE}")
-            mapfile -t EXISTING_SCOPE < <(jq -r '.existing[]' "${SCOPE_FILE}")
-            jq -r '.skipped[] | "::warning::Excluded symlink or unsupported refresh path: " + tojson' "${SCOPE_FILE}"
-
-            # Changelog convention, decided per repo and enforced by the
-            # allowlist rather than by instruction alone. A chlog repo
-            # *generates* `CHANGELOG.md` from the fragments under
-            # `.changes/unreleased/`, so an entry written straight into it is
-            # discarded by the next `chlog batch` and puts back, on that one
-            # file, the rebase conflicts the fragments exist to prevent. The
-            # 2026-08-31 run wrote 46 such entries because the prompt told
-            # Claude to edit the CHANGELOG and the grant let it. Granting only
-            # the tool the applicable convention needs makes the wrong one
-            # impossible, not merely discouraged.
-            #
-            # The predicate is copied verbatim from the `pipelines`
-            # basic-checks gate (which in turn mirrors AutoBump's
-            # `DetectChlog`), so the three cannot disagree about whether a
-            # repository uses chlog. A config file is optional --- chlog falls
-            # back to its built-in defaults --- which is why the fragment
-            # directory alone counts.
-            #
-            # In chlog mode the granted tool is the `chlog new` command itself,
-            # not write access to the fragment directory: the fragment's
-            # filename and `time` then come from the tool's clock, never from
-            # the model, which is what the fragment check after the run
-            # verifies.
-            if [ -f "${target}/.chlog.yaml" ] || [ -f "${target}/.chlog.yml" ] || [ -d "${target}/.changes/unreleased" ]; then
-              changelog_mode='chlog'
-              changelog_tools=',Bash(chlog new:*)'
-              changelog_note='This repository uses chlog. `CHANGELOG.md` is generated from the fragments under `.changes/unreleased/`, and you have been granted no tool that can edit it or write into that directory by hand. Record the refresh by running `chlog new` from the repository root, exactly as described under "If the repository uses chlog".'
-            elif [ -f "${target}/CHANGELOG.md" ]; then
-              changelog_mode='changelog'
-              changelog_tools=',Edit(/CHANGELOG.md)'
-              changelog_note='This repository does not use chlog. Record the refresh directly in `CHANGELOG.md` under `[Unreleased]`, exactly as described under "If the repository does not use chlog".'
-            else
-              changelog_mode='none'
-              changelog_tools=''
-              changelog_note='This repository has neither chlog nor a `CHANGELOG.md`. Do not record the refresh anywhere --- just edit whichever in-scope files drifted.'
-            fi
-            echo "--> changelog convention: ${changelog_mode}"
-            # Built with printf rather than a literal multi-line string: the
-            # appended section has to sit at column 0 to read as Markdown, and
-            # a column-0 line inside this block scalar would end the YAML
-            # document.
-            repo_prompt="$(printf '%s\n\n---\n\n## Changelog convention for this repository\n\n%s\n\n## Guidance layout for this repository\n\n%s\n' \
-              "${PROMPT_CONTENT}" "${changelog_note}" "$(jq -r '.note' "${LAYOUT_FILE}")")"
-
-            # `</dev/null` is load-bearing: without it `claude -p` inherits
-            # the outer `while read` loop's stdin (the jq pipe) and consumes
-            # the rest of the repo list, so the loop exits silently after
-            # the first iteration with a misleading "Batch summary".
-            #
-            # `set +e` around the pipeline is equally load-bearing. Under
-            # `set -e` + `pipefail` the pipeline's status *is* claude's exit
-            # code, so a non-zero claude aborts the whole step on the spot
-            # and `claude_rc` below is never even read. That is how a single
-            # safeguard refusal on repo 7 stranded repos 8-10 of a 10-repo
-            # batch, and why the quota short-circuit below had in fact never
-            # run. Suspending errexit keeps a claude failure local to the
-            # repo that caused it, so the loop can classify it and move on.
-            #
-            # Output is tee'd to ${CLAUDE_LOG} so the failure can be told
-            # apart:
-            #   - usage limit (`monthly usage limit`, `monthly spend limit`,
-            #     `hit your weekly limit`, `hit your 5-hour limit`, or the
-            #     `usage_limit_reached` error code) --- a Claude cap is
-            #     exhausted. The 5-hour wording is its own phrase: neither
-            #     `weekly` nor `monthly` appears in it. Every
-            #     remaining repo would burn ~3min into the same wall, so
-            #     `quota_hit=1` short-circuits the batch. The code is matched
-            #     as well as the wording because the CLI rewords the message:
-            #     "hit your org's monthly spend limit" matched neither older
-            #     phrase, so the 2026-10-26 and 2026-11-02 runs filed every
-            #     quota hit as a plain `claude:` failure. The audit's JSON has
-            #     carried `api_error: usage_limit_reached` for every limit seen
-            #     so far; the refresh prints text only, so it needs the wording.
-            #   - safeguard refusal --- Claude declines the repo's content
-            #     (e.g. a security-topic repo trips the cybersecurity
-            #     safeguard). This is deterministic for that one repo and
-            #     says nothing about the others, so only it is skipped ---
-            #     and skipped is all it is: it goes on the `safeguard_skipped`
-            #     summary line and a `::warning::` annotation, not into
-            #     `failed`, because the leg has nothing to retry and nothing
-            #     it can fix. Counting it as a failure kept the run red for
-            #     as long as that repo tripped it (`intelligencer-door`,
-            #     2026-08-31), which only teaches people to ignore red.
-            #   - anything else --- transient API/network error, max-turns
-            #     abort, crash. Recorded in `failed` (so the leg goes red)
-            #     and skipped, still non-fatal to the rest of the batch.
-            #
-            # Claude can echo repository-controlled text, such as a path the
-            # layout skipped, and the runner acts on a workflow command it
-            # finds in step output (`::add-mask::`, `::stop-commands::`, or
-            # `##[...]` anywhere in a line). `::stop-commands::` with a random
-            # token turns that off until the token comes back, so nothing
-            # Claude prints can annotate, mask, or fail the run.
-            #
-            # PIPESTATUS[0] holds the subshell's (claude's) exit code;
-            # we explicitly do not want `tee`'s exit code, which is
-            # almost always 0 and would mask claude failures.
-            #
-            # `env -u GH_TOKEN` starts the audit and the refresh without the
-            # owner's token: they read files, edit the granted paths and, in a
-            # chlog repository, run `chlog new`, while the clone above and the
-            # push and PR calls below are what use it. That leaves
-            # `CLAUDE_CODE_OAUTH_TOKEN` as the only secret in the agent's
-            # environment, and it stays because it is the CLI's own credential.
-            rm -f "${CLAUDE_LOG}"
-            stop_token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-            echo "::stop-commands::${stop_token}"
-            set +e
-            ( cd "${target}" && env -u GH_TOKEN bash "${GITHUB_WORKSPACE}/scripts/audit-and-refresh.sh" \
-                  "${repo_prompt}" "${CLAUDE_MODEL}" "${MAX_TURNS}" "${changelog_tools}" "${SCOPE_FILE}" </dev/null ) 2>&1 | tee "${CLAUDE_LOG}"
-            claude_rc=${PIPESTATUS[0]}
-            set -e
-            echo "::${stop_token}::"
-            if [ "${claude_rc}" -ne 0 ]; then
-              if grep -qEi 'monthly (usage|spend) limit|hit your (weekly|5-hour) limit|usage_limit_reached' "${CLAUDE_LOG}"; then
-                echo "--> Claude usage limit reached; skipping the rest of this batch."
-                failed+=("claude-quota: ${target_repo}")
-                quota_hit=1
-              elif grep -qEi 'safeguards flagged|cyber-use-case' "${CLAUDE_LOG}"; then
-                echo "--> Claude's safeguards refused this repo (exit ${claude_rc}); moving on to the next one."
-                echo "::warning::Claude's safeguards refused ${target_repo}; it was skipped, not refreshed."
-                safeguard_skipped+=("${target_repo}")
-              else
-                echo "--> claude exited ${claude_rc}; moving on to the next repo."
-                failed+=("claude: ${target_repo}")
-              fi
-              rm -rf "${target}"
-              continue
-            fi
-
-            # A root AGENTS.md the refresh created still needs its CLAUDE.md import.
-            if ! refresh-docs layout "${target}" >/dev/null; then
-              failed+=("layout: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            # Post-refresh enforcement of the chlog convention. The
-            # allowlist above already denies every tool that could reach
-            # `CHANGELOG.md` in a chlog repo, so neither branch here should
-            # ever fire; they exist because the allowlist is the CLI's
-            # promise rather than this workflow's, and a silently-dropped
-            # grant would put the fleet straight back to hand-edited
-            # changelogs. Discarding is always the right resolution: in a
-            # chlog repo the next `chlog batch` discards a hand-edit anyway,
-            # and a fragment already committed by an earlier PR must not be
-            # rewritten by this one --- only brand-new fragments are
-            # legitimate output.
-            #
-            # Both restores are flagged rather than bare. `git diff --quiet`
-            # returns non-zero for a git error as well as for "there are
-            # differences", so the restore can be reached in a state where it
-            # also fails --- and a bare command in an `if` *body* is subject to
-            # `errexit`, which would abort the whole leg mid-loop instead of
-            # failing this one repo. Continuing anyway is not an option either:
-            # a repo whose hand-edited `CHANGELOG.md` could not be reverted
-            # would open a PR carrying exactly the edit this guard exists to
-            # prevent, so the repo is skipped and recorded as
-            # `changelog-guard:`.
-            if [ "${changelog_mode}" = 'chlog' ]; then
-              changelog_guard_failed=0
-              if ! git -C "${target}" diff --quiet -- CHANGELOG.md; then
-                echo '--> discarded a hand-edit of CHANGELOG.md: this repo generates it from chlog fragments.'
-                git -C "${target}" checkout -- CHANGELOG.md || changelog_guard_failed=1
-              fi
-              if ! git -C "${target}" diff --quiet -- .changes; then
-                echo '--> discarded edits to existing chlog fragments: only new fragments are allowed.'
-                git -C "${target}" checkout -- .changes || changelog_guard_failed=1
-              fi
-              if [ "${changelog_guard_failed}" -eq 1 ]; then
-                echo '--> could not restore the changelog target; skipping this repo.'
-                failed+=("changelog-guard: ${target_repo}")
-                rm -rf "${target}"
-                continue
-              fi
-              # A fragment `chlog batch` cannot parse breaks that repo's next
-              # release, which is both far away from here and hard to trace
-              # back. Rejecting the repo now keeps the malformed file out of
-              # the PR and turns the leg red so it is noticed this week.
-              #
-              # The second half of the check is provenance. `chlog new` stamps
-              # `time` from one `time.Now()` and names the file from a second
-              # `time.Now().UnixNano()` a few dozen microseconds later, so the
-              # two agree to the second on every fragment the tool wrote and
-              # on none typed by hand. The
-              # allowlist no longer hands out any way to write into
-              # `.changes/unreleased/`, so this should never fire; it is the
-              # half of the pair that does not depend on the CLI honouring
-              # the grant. Only whole seconds are compared, with a 2-second
-              # tolerance for the two reads straddling a second boundary, and a
-              # `time` in the future is rejected outright because
-              # `chlog batch` orders the release section by it.
-              #
-              # Every command substitution in the loop is guarded with `||`:
-              # under `set -e` a failing substitution inside an assignment
-              # aborts the whole leg, and `grep` exits 1 on no match.
-              fragment_bad=''
-              fragment_reason=''
-              now_epoch=$(date -u +%s)
-              while IFS= read -r fragment; do
-                case "${fragment}" in
-                  *.yaml) ;;
-                  *) fragment_bad="${fragment}"; fragment_reason='not a .yaml file'; break ;;
-                esac
-                if ! grep -q '^kind: .' "${target}/${fragment}" \
-                  || ! grep -q '^body: .' "${target}/${fragment}" \
-                  || ! grep -q '^time: .' "${target}/${fragment}"; then
-                  fragment_bad="${fragment}"
-                  fragment_reason='missing a kind:, body: or time: line'
-                  break
-                fi
-                fragment_name="${fragment##*/}"
-                name_nanos="${fragment_name%%-*}"
-                case "${name_nanos}" in
-                  [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-                  *) fragment_bad="${fragment}"; fragment_reason='the filename is not the nanosecond prefix chlog new writes'; break ;;
-                esac
-                name_epoch=$((name_nanos / 1000000000))
-                # `time` is RFC 3339 with nanoseconds; `date` only needs the whole seconds.
-                time_value=$(grep -m1 '^time: ' "${target}/${fragment}" \
-                  | sed -E "s/^time: '?([^']*)'?.*$/\1/; s/\.[0-9]+Z$/Z/") || time_value=''
-                if ! time_epoch=$(date -u -d "${time_value}" +%s 2>/dev/null); then
-                  fragment_bad="${fragment}"; fragment_reason="time '${time_value}' does not parse"; break
-                fi
-                if [ $((name_epoch - time_epoch)) -gt 2 ] || [ $((time_epoch - name_epoch)) -gt 2 ]; then
-                  fragment_bad="${fragment}"; fragment_reason='filename and time disagree, so chlog new did not write it'; break
-                fi
-                if [ "${time_epoch}" -gt $((now_epoch + 60)) ]; then
-                  fragment_bad="${fragment}"; fragment_reason='time is in the future'; break
-                fi
-              done < <(git -C "${target}" ls-files --others --exclude-standard -- .changes/unreleased)
-              if [ -n "${fragment_bad}" ]; then
-                echo "--> rejected chlog fragment '${fragment_bad}' (${fragment_reason}); skipping this repo."
-                failed+=("fragment: ${target_repo}")
-                rm -rf "${target}"
-                continue
-              fi
-            fi
-
-            # Build literal pathspecs from the original manifest. Include
-            # tracked deletions as well as files created during the refresh.
-            drift_paths=()
-            stage_failed=0
-            for path in "${IN_SCOPE[@]}"; do
-              if [ -f "${target}/${path}" ] && [ ! -L "${target}/${path}" ]; then
-                git -C "${target}" add -N -- ":(literal)${path}" || stage_failed=1
-                drift_paths+=(":(literal)${path}")
-              elif printf '%s\n' "${EXISTING_SCOPE[@]}" | grep -Fx -- "${path}" >/dev/null; then
-                drift_paths+=(":(literal)${path}")
-              fi
-            done
-            if [ "${stage_failed}" -ne 0 ]; then
-              failed+=("stage: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            if [ "${#drift_paths[@]}" -eq 0 ]; then
-              no_drift+=("${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            if git -C "${target}" diff HEAD --quiet -w -- "${drift_paths[@]}"; then
-              no_drift+=("${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            # Where this repository's changelog entry lands. It is staged with
-            # the drifted files below, so the guard that follows reads it too.
-            changelog_paths=()
-            if [ "${changelog_mode}" = 'chlog' ]; then
-              changelog_paths=('.changes/unreleased')
-            elif [ "${changelog_mode}" = 'changelog' ]; then
-              changelog_paths=('CHANGELOG.md')
-            fi
-
-            # Secret-shape guard. What this job writes is prose ABOUT secret
-            # hygiene, and gitleaks matches shapes rather than values:
-            # several rules in the GitLab-customised set the shared
-            # `sast:gitleaks` stage runs in its second pass fire on a vendor
-            # prefix or a key banner ALONE, with no body check. On 2026-08-26
-            # that turned a bullet warning against credential-shaped fixtures
-            # into a finding in ~40 repositories at once. Because the scan on
-            # `main` walks the whole history reachable from `HEAD`, rewording
-            # the sentence afterwards does not clear it --- only a
-            # `.gitleaksignore` fingerprint does, and this job is granted no
-            # tool that could write one. The prompt forbids these shapes;
-            # this refuses the diff that carries one anyway, which is the
-            # half of the pair that does not depend on the model complying.
-            #
-            # Scoped to ADDED lines (`git diff -U0` after the `add -N` above,
-            # so a brand-new file is read in full) on purpose: the fleet's
-            # older skills still carry the hyphenated wording, and failing a
-            # repo for text this run did not write would turn a documentation
-            # backlog into a permanently red leg.
-            #
-            # The changelog entry is read with them: it is staged with the
-            # drifted files and it is free text the refresh writes. A new chlog
-            # fragment is untracked, so it is marked intent-to-add the same way;
-            # the `-d` test keeps `git add -N` from failing in a chlog repository
-            # that has no fragment directory, where there is nothing to read.
-            #
-            # Every pattern is written so it cannot match itself --- each
-            # prefix is followed by a bracket expression rather than by body
-            # characters, which is exactly the property the approved wording
-            # in the prompt relies on.
-            #
-            # Two shapes are matched on a full-length body instead of a prefix
-            # the scanner flags on its own, because what they catch is a token
-            # itself: `github_pat_`, a fine-grained GitHub token, which is what
-            # the owners' tokens are; and `sk-ant-`, an Anthropic token, since
-            # Claude Code's own credential is in the agent's environment while
-            # it runs.
-            #
-            # The plumbing below is written to fail CLOSED. A guard that
-            # quietly does not fire is worse than no guard: it restores the
-            # dependency on the model complying that this exists to remove,
-            # while reading as if it had checked. Three details carry that:
-            #   - the diff is captured before it is searched, and a failure
-            #     to read it is treated like a finding. Left inside the
-            #     pipeline, a dying `git diff` is indistinguishable from
-            #     "nothing matched", and "could not look" must never be
-            #     reported as "looked, and it was clean".
-            #   - the match stage is `grep -E ... >/dev/null`, never
-            #     `grep -Eq`. `-q` exits on the first hit and closes the
-            #     pipe; the upstream `grep` then takes SIGPIPE and exits
-            #     141, and under `pipefail` that 141 --- not the match ---
-            #     is what the `if` sees, so the guard silently does NOT
-            #     fire. It would misfire that way precisely on the case it
-            #     most needs to cover, a large added-line stream: a
-            #     brand-new file read in full, or several at once. This is
-            #     the `set +e` / `PIPESTATUS[0]` hazard around the
-            #     `claude ... | tee` pipeline above, in the other direction.
-            #   - the `+++ b/<path>` file headers are dropped explicitly
-            #     rather than by matching `^\+[^+]`, which would also drop
-            #     an added line whose own first character is a `+`.
-            if [ "${changelog_mode}" = 'chlog' ] && [ -d "${target}/.changes/unreleased" ] \
-                && ! git -C "${target}" add -N -- .changes/unreleased; then
-              failed+=("stage: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            if ! refresh_diff="$(git -C "${target}" diff HEAD -U0 -- "${drift_paths[@]}" "${changelog_paths[@]}")"; then
-              echo '--> could not read the refresh diff to check it for credential-shaped literals; skipping this repo.'
-              failed+=("secret-shape: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            if printf '%s\n' "${refresh_diff}" \
-              | grep -E '^\+' \
-              | grep -Ev '^\+\+\+ ' \
-              | grep -E 'xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82}|sk-ant-[0-9A-Za-z_-]{32,}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]' >/dev/null; then
-              echo '--> the refresh added a credential-shaped literal, which must not reach a commit; skipping this repo.'
-              failed+=("secret-shape: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            # Idempotent branch: force-push updates the diff if a PR
-            # already exists. Guarded like every other git/gh call in this
-            # loop --- a bare command here would abort the whole batch under
-            # `set -e` instead of failing just this repo.
-            if ! git -C "${target}" checkout -B "${REFRESH_BRANCH}"; then
-              failed+=("branch: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            stage_paths=("${drift_paths[@]}" "${changelog_paths[@]}")
-            if ! git -C "${target}" add -- "${stage_paths[@]}"; then
-              failed+=("stage: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            if ! git -C "${target}" commit --quiet -m 'chore(refresh): refreshed configuration and documentation'; then
-              failed+=("commit: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            if ! git_authenticated -C "${target}" push --quiet --force --set-upstream origin "${REFRESH_BRANCH}"; then
-              failed+=("push: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-
-            # Filter by `--state open` because `gh pr view <branch>` matches
-            # PRs in any state (including merged/closed). Without this filter,
-            # a previously-merged PR for this branch causes the workflow to
-            # log "already exists; force-push updated its diff" and skip
-            # `gh pr create`, leaving the new commit stranded on a branch
-            # with no open PR. The call is wrapped in `if !` because under
-            # `set -e` a transient `gh` failure (auth/network/permissions)
-            # in a bare command substitution would abort the whole batch
-            # mid-loop, bypassing the `failed+=()` bookkeeping and the
-            # per-repo cleanup; the explicit conditional keeps the failure
-            # local to this repo.
-            if ! existing_pr=$(gh pr list --repo "${target_repo}" --head "${REFRESH_BRANCH}" --state open --json number --jq '.[0].number // empty' 2>/dev/null); then
-              failed+=("pr-list: ${target_repo}")
-              rm -rf "${target}"
-              continue
-            fi
-            if [ -n "${existing_pr}" ]; then
-              echo "PR #${existing_pr} already exists; force-push updated its diff."
-              prs_updated+=("${target_repo}#${existing_pr}")
-            else
-              if pr_url=$(gh pr create \
-                  --repo "${target_repo}" \
-                  --base "${default_branch}" \
-                  --head "${REFRESH_BRANCH}" \
-                  --title 'chore(refresh): refreshed configuration and documentation' \
-                  --body $'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.\n\n`AGENTS.md` is the instruction file and every `CLAUDE.md` holds only the `@AGENTS.md` import. The workflow moves a legacy `CLAUDE.md` into that layout before Claude Code runs, committing a rename on its own so history follows the file.\n\nClaude Code ran a read-only prompt audit, then reviewed `AGENTS.md`, the other discovered instruction files, skills, agents, custom commands, `README.md`, and `CONTRIBUTING.md` against the current code, updated whichever drifted, and recorded the change as a `.changes/unreleased/` fragment (chlog repositories) or under `[Unreleased]` in `CHANGELOG.md` (everywhere else).\n\nReview the diff carefully --- this PR was generated by Claude Code and may contain inaccuracies.' 2>/dev/null); then
-                echo "Created ${pr_url}"
-                prs_created+=("${target_repo} (${pr_url})")
-              else
-                failed+=("pr-create: ${target_repo}")
-              fi
-            fi
-
-            rm -rf "${target}"
-          done < <(echo "${REPOS}" | jq -c '.[]')
-
-          rm -rf "${WORK_DIR}"
-
-          echo
-          echo '==== Batch summary ===='
-          echo "processed (${idx}/${total})"
-          echo "no_drift (${#no_drift[@]}): ${no_drift[*]:-}"
-          echo "prs_created (${#prs_created[@]}): ${prs_created[*]:-}"
-          echo "prs_updated (${#prs_updated[@]}): ${prs_updated[*]:-}"
-          echo "quota_skipped (${#quota_skipped[@]}): ${quota_skipped[*]:-}"
-          echo "safeguard_skipped (${#safeguard_skipped[@]}): ${safeguard_skipped[*]:-}"
-          # One per line: every entry is a "<reason>: <owner>/<repo>" pair,
-          # so `${failed[*]}` space-joins them into an unreadable run-on.
-          # Plain `"${failed[@]}"` is safe on an empty array under `set -u`:
-          # the nounset-on-empty-array error was fixed in bash 4.4 and the
-          # runner ships 5.x, so the `${failed[@]+...}` guard buys nothing
-          # here and only obscures that each element stays a single word.
-          echo "failed (${#failed[@]}):"
-          for entry in "${failed[@]}"; do
-            echo "  - ${entry}"
-          done
-          # Only `failed` turns the leg red. `quota_skipped` and
-          # `safeguard_skipped` are reported above but are not failures:
-          # neither is something this leg could have done differently.
-          if [ "${#failed[@]}" -gt 0 ]; then
-            exit 1
-          fi
+        run: 'refresh-docs run --config .config-automation.yaml --work-dir "${RUNNER_TEMP}/refresh-work"'
 
   # The discover job deliberately keeps going when an owner cannot be enumerated, so the
   # reachable owners still get refreshed. This job is what stops that tolerance from
@@ -899,13 +158,13 @@ jobs:
     steps:
       - name: 'Fail when an owner could not be enumerated'
         env:
-          FAILED_OWNERS: ${{ needs.discover.outputs.failed_owners }}
+          FAILED_ORGANIZATIONS: ${{ needs.discover.outputs.failed_organizations }}
         run: |
           set -euo pipefail
-          if [ -z "${FAILED_OWNERS}" ] || [ "${FAILED_OWNERS}" = '[]' ]; then
+          if [ -z "${FAILED_ORGANIZATIONS}" ] || [ "${FAILED_ORGANIZATIONS}" = '[]' ]; then
             echo 'Every configured owner was enumerated.'
             exit 0
           fi
-          echo "::error::These owners could not be enumerated and were skipped entirely: ${FAILED_OWNERS}"
+          echo "::error::These owners could not be enumerated and were skipped entirely: ${FAILED_ORGANIZATIONS}"
           echo 'Check that each owner has its own fine-grained PAT with a lifetime of 366 days or less.'
           exit 1

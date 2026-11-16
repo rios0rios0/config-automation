@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
+	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
 const (
@@ -27,15 +28,33 @@ const (
 	// createdFileMode applies only to a file the layout creates; Git
 	// records a non-executable file as 100644 whatever its mode on disk.
 	createdFileMode = 0o600
+	// differencesExitCode is how `git diff --quiet` says the sides differ;
+	// any higher code is an error, never a difference.
+	differencesExitCode = 1
+	// literalPathspec makes git take a path as written, never as a pattern.
+	literalPathspec = ":(literal)"
+	// gitDiff is the subcommand every change question asks.
+	gitDiff = "diff"
 )
 
-// GitWorkingTreeRepository implements repositories.WorkingTreeRepository
-// with the git CLI and the local filesystem.
-type GitWorkingTreeRepository struct{}
+// GitWorkingTreeRepository implements repositories.WorkingTreeRepository and
+// repositories.ChangesRepository with the git CLI and the local filesystem.
+// A non-empty identity authors its commits through `-c` options, so nothing
+// is written to any git configuration.
+type GitWorkingTreeRepository struct {
+	identity entities.GitIdentity
+}
+
+// Ensure both ports are satisfied at compile time.
+var (
+	_ repositories.WorkingTreeRepository = (*GitWorkingTreeRepository)(nil)
+	_ repositories.ChangesRepository     = (*GitWorkingTreeRepository)(nil)
+)
 
 // NewGitWorkingTreeRepository is the constructor the composition root calls.
-func NewGitWorkingTreeRepository() *GitWorkingTreeRepository {
-	return &GitWorkingTreeRepository{}
+// The zero identity leaves git's own configuration in charge.
+func NewGitWorkingTreeRepository(identity entities.GitIdentity) *GitWorkingTreeRepository {
+	return &GitWorkingTreeRepository{identity: identity}
 }
 
 // FindIndexEntries parses `git ls-files --stage -z`.
@@ -164,14 +183,124 @@ func (r *GitWorkingTreeRepository) Untrack(ctx context.Context, root, path strin
 
 // Stage adds paths to the index with `git add`.
 func (r *GitWorkingTreeRepository) Stage(ctx context.Context, root string, paths []string) error {
-	_, err := r.git(ctx, root, append([]string{"add", "--"}, paths...)...)
+	_, err := r.git(ctx, root, append([]string{"add", "--"}, literal(paths...)...)...)
 	return err
 }
 
-// Commit records the index with `git commit`.
+// Commit records the index with `git commit`, as the configured identity.
 func (r *GitWorkingTreeRepository) Commit(ctx context.Context, root, message string) error {
-	_, err := r.git(ctx, root, "commit", "-q", "-m", message)
+	arguments := []string{}
+	if r.identity.Name != "" {
+		arguments = append(arguments, "-c", "user.name="+r.identity.Name)
+	}
+	if r.identity.Email != "" {
+		arguments = append(arguments, "-c", "user.email="+r.identity.Email)
+	}
+	_, err := r.git(ctx, root, append(arguments, "commit", "-q", "-m", message)...)
 	return err
+}
+
+// Checkout switches to an existing branch with `git checkout`.
+func (r *GitWorkingTreeRepository) Checkout(ctx context.Context, root, branch string) error {
+	_, err := r.git(ctx, root, "checkout", "--quiet", branch, "--")
+	return err
+}
+
+// CreateBranch starts branch at HEAD with `git checkout -B`.
+func (r *GitWorkingTreeRepository) CreateBranch(ctx context.Context, root, branch string) error {
+	_, err := r.git(ctx, root, "checkout", "--quiet", "-B", branch)
+	return err
+}
+
+// MarkIntentToAdd runs `git add --intent-to-add` on paths.
+func (r *GitWorkingTreeRepository) MarkIntentToAdd(ctx context.Context, root string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	_, err := r.git(ctx, root, append([]string{"add", "--intent-to-add", "--"}, literal(paths...)...)...)
+	return err
+}
+
+// HasChanges asks `git diff HEAD --quiet -w` about paths.
+func (r *GitWorkingTreeRepository) HasChanges(ctx context.Context, root string, paths []string) (bool, error) {
+	return r.differs(ctx, root, append([]string{gitDiff, "HEAD", "--quiet", "-w", "--"}, literal(paths...)...)...)
+}
+
+// FindDiff returns `git diff HEAD -U0` of paths; no paths is no diff.
+func (r *GitWorkingTreeRepository) FindDiff(ctx context.Context, root string, paths []string) (string, error) {
+	if len(paths) == 0 {
+		return "", nil
+	}
+	return r.git(ctx, root, append([]string{gitDiff, "HEAD", "-U0", "--"}, literal(paths...)...)...)
+}
+
+// HasUnstagedChanges asks `git diff --quiet` whether path differs between
+// the index and the working tree.
+func (r *GitWorkingTreeRepository) HasUnstagedChanges(ctx context.Context, root, path string) (bool, error) {
+	return r.differs(ctx, root, append([]string{gitDiff, "--quiet", "--"}, literal(path)...)...)
+}
+
+// Restore puts the index version of path back with `git checkout --`.
+func (r *GitWorkingTreeRepository) Restore(ctx context.Context, root, path string) error {
+	_, err := r.git(ctx, root, append([]string{"checkout", "--"}, literal(path)...)...)
+	return err
+}
+
+// FindUntracked lists the untracked, unignored files below directory.
+func (r *GitWorkingTreeRepository) FindUntracked(ctx context.Context, root, directory string) ([]string, error) {
+	output, err := r.git(
+		ctx, root, append([]string{"ls-files", "-z", "--others", "--exclude-standard", "--"}, literal(directory)...)...)
+	if err != nil {
+		return nil, err
+	}
+	files := []string{}
+	for file := range strings.SplitSeq(output, "\x00") {
+		if file != "" {
+			files = append(files, file)
+		}
+	}
+	return files, nil
+}
+
+// HasStagedChanges asks `git diff --cached --quiet` whether the index
+// differs from HEAD.
+func (r *GitWorkingTreeRepository) HasStagedChanges(ctx context.Context, root string) (bool, error) {
+	return r.differs(ctx, root, gitDiff, "--cached", "--quiet")
+}
+
+// IsAhead counts the commits of HEAD that base lacks.
+func (r *GitWorkingTreeRepository) IsAhead(ctx context.Context, root, base string) (bool, error) {
+	output, err := r.git(ctx, root, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return false, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(output))
+	if err != nil {
+		return false, fmt.Errorf("counting the commits ahead of %s: %w", base, err)
+	}
+	return count > 0, nil
+}
+
+// differs runs a `git diff --quiet` and turns its exit code into an answer.
+func (r *GitWorkingTreeRepository) differs(ctx context.Context, root string, arguments ...string) (bool, error) {
+	_, err := r.git(ctx, root, arguments...)
+	if err == nil {
+		return false, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == differencesExitCode {
+		return true, nil
+	}
+	return false, err
+}
+
+// literal marks paths as literal pathspecs.
+func literal(paths ...string) []string {
+	marked := make([]string, 0, len(paths))
+	for _, path := range paths {
+		marked = append(marked, literalPathspec+path)
+	}
+	return marked
 }
 
 // git runs git in root and returns its standard output, or an error that

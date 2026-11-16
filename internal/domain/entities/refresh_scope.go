@@ -35,13 +35,15 @@ const (
 
 // RefreshScope is the manifest one repository's refresh works from: the
 // exact paths it may stage, which of them exist, which it may create, which
-// CLAUDE.md imports only the host writes, and the tools granted to Claude.
-// The CLI maps it to the JSON the refresh workflows read with jq.
+// CLAUDE.md imports only the host writes, which instruction files of a
+// disabled kind the host removes, and the tools granted to Claude. Managed
+// and removed paths are staged and drift-checked but never granted.
 type RefreshScope struct {
 	Paths        []string
 	Existing     []string
 	Creatable    []string
 	Managed      []string
+	Removed      []string
 	AllowedTools []string
 	Skipped      []string
 }
