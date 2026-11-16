@@ -295,11 +295,16 @@ stages:
         parameters:
           expectedSha: '${{ variables.configAutomationSha }}'
           configFile: '.config-automation.yaml'
+          environment:                # the variables its configuration reads
+            GIT_USER_NAME: '$(GIT_USER_NAME)'
+            GIT_USER_EMAIL: '$(GIT_USER_EMAIL)'
 ```
 
 The consumer's `.config-automation.yaml` names its organization with
-`type: 'azuredevops'` and `token: '${AZURE_DEVOPS_PAT}'`. The template also takes
-`repo` (one `project/name`), `batchSize`, `maxParallel`, and `maxTurns`, re-checks the
+`type: 'azuredevops'` and `token: '${AZURE_DEVOPS_PAT}'`; any other `${VAR}` it reads
+must be mapped through `environment`, since a step sees no secret variable unless it
+is mapped. The template also takes `repo` (one `project/name`), `batchSize`,
+`maxParallel`, and `maxTurns`, re-checks the
 pinned commit after every checkout, installs Go from this repository's `go.mod`, and
 reads `CLAUDE_MODEL` and `CLAUDE_EFFORT` from the consumer's variables when set. To
 upgrade, change the tag and the SHA together.

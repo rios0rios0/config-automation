@@ -3,9 +3,8 @@
 # `refresh` leg runs `refresh-docs run` on one batch. The consumer owns the
 # stage around these jobs, its condition and its `dependsOn`, and its
 # variables, which must provide the secrets AZURE_DEVOPS_PAT and
-# CLAUDE_CODE_OAUTH_TOKEN plus whatever `${VAR}` its configuration names; it may
-# also set CLAUDE_MODEL and CLAUDE_EFFORT. Every value here is a parameter, so
-# this template carries no organization's data.
+# CLAUDE_CODE_OAUTH_TOKEN; it may also set CLAUDE_MODEL and CLAUDE_EFFORT. Every
+# value here is a parameter, so this template carries no organization's data.
 parameters:
   # The repository resource alias under which the consumer declares this repository.
   - name: 'toolRepository'
@@ -31,6 +30,12 @@ parameters:
   - name: 'maxTurns'
     type: 'number'
     default: 50
+  # More variables for both steps, as `NAME: '$(variable)'`: whatever `${VAR}`
+  # the configuration file reads, such as the git identity. Azure Pipelines
+  # gives a step only its non-secret variables unless they are mapped.
+  - name: 'environment'
+    type: 'object'
+    default: {}
 
 jobs:
   - job: 'discover'
@@ -54,6 +59,8 @@ jobs:
           CONFIG_FILE: '${{ parameters.configFile }}'
           BATCH_SIZE: '${{ parameters.batchSize }}'
           REPO: '${{ parameters.repo }}'
+          ${{ each variable in parameters.environment }}:
+            ${{ variable.key }}: '${{ variable.value }}'
         name: 'set_matrix'
         displayName: 'Build the batched matrix'
 
@@ -104,4 +111,6 @@ jobs:
           CONFIG_FILE: '${{ parameters.configFile }}'
           REPOS: '$(repos)'
           MAX_TURNS: '${{ parameters.maxTurns }}'
+          ${{ each variable in parameters.environment }}:
+            ${{ variable.key }}: '${{ variable.value }}'
         displayName: 'Process batch'
