@@ -139,8 +139,10 @@ authenticate through a git credential helper that answers only for the provider'
 host (`github.com`, `dev.azure.com`) from variables set on that one git process, so
 the token is not in the clone's remote URL (and therefore not in its `.git/config`),
 nor on a command line, nor sent to any other host. Claude Code starts with every
-hosting token removed from its environment; `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
-needs, is the one secret it keeps. The check that rejects credential-shaped text in
+hosting token removed from its environment, including every variable a configured
+provider token reads, and may not read under `/proc`, where its parents'
+environments hold the token; `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI needs, is the
+one secret it keeps. The check that rejects credential-shaped text in
 the refresh's diff, the changelog entry included, matches the shapes of both tokens:
 a fine-grained GitHub token and an Anthropic token.
 
@@ -304,10 +306,14 @@ The consumer's `.config-automation.yaml` names its organization with
 `type: 'azuredevops'` and `token: '${AZURE_DEVOPS_PAT}'`; any other `${VAR}` it reads
 must be mapped through `environment`, since a step sees no secret variable unless it
 is mapped. The template also takes `repo` (one `project/name`), `batchSize`,
-`maxParallel`, and `maxTurns`, re-checks the
-pinned commit after every checkout, installs Go from this repository's `go.mod`, and
-reads `CLAUDE_MODEL` and `CLAUDE_EFFORT` from the consumer's variables when set. To
-upgrade, change the tag and the SHA together.
+`maxParallel`, and `maxTurns`, re-checks the pinned commit after every checkout,
+installs Go from this repository's `go.mod`, and reads `CLAUDE_MODEL` and
+`CLAUDE_EFFORT` from the consumer's variables when set. Its `verify` job fails the run
+when an organization could not be listed, after the reachable ones were refreshed.
+With several organizations, give each its own `credential` in the configuration,
+naming the variable that holds its token (mapped through `environment`); a leg
+without one runs with `AZURE_DEVOPS_PAT`. To upgrade, change the tag and the SHA
+together.
 
 ### The `harden-repos` CLI
 

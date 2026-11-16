@@ -14,13 +14,16 @@ import (
 // repository already had never fails a refresh that did not write it.
 //
 // Each pattern is written so it cannot match itself: every prefix is followed
-// by a bracket expression rather than by body characters. Two shapes need a
+// by a bracket expression rather than by body characters. Three shapes need a
 // full-length body instead of a prefix, because what they catch is a token
-// itself: a fine-grained GitHub token and an Anthropic token.
+// itself: a fine-grained GitHub token, an Anthropic token, and an Azure DevOps
+// token in its 84-character format, which carries the signature `AZDO` after
+// 76 characters.
 func HasCredentialShape(diff string) bool {
 	shapes := regexp.MustCompile(
 		`xox[abprs]-|BEGIN[ A-Z]*PRIVATE KEY|gh[opsur]_[0-9A-Za-z]{36}|github_pat_[0-9A-Za-z_]{82}|` +
-			`sk-ant-[0-9A-Za-z_-]{32,}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]`,
+			`sk-ant-[0-9A-Za-z_-]{32,}|AKIA[0-9A-Z]{16}|ey[0-9A-Za-z]{17,}\.ey[0-9A-Za-z]|` +
+			`[0-9A-Za-z]{76}AZDO[0-9A-Za-z]{4}`,
 	)
 	return slices.ContainsFunc(AddedLines(diff), shapes.MatchString)
 }

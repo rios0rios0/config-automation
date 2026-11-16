@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"net/url"
 	"os"
@@ -93,6 +94,8 @@ type refreshFixture struct {
 	agent        map[string]string
 	variables    map[string]string
 	extraConfig  string
+	// agentDouble, when set, replaces the fake Claude CLI.
+	agentDouble repositories.AgentRepository
 }
 
 // outcome is what one run printed and returned.
@@ -138,16 +141,32 @@ func (f *refreshFixture) git(directory string, arguments ...string) string {
 // repository the run will clone, adds it to the batch, and returns it.
 func (f *refreshFixture) repository(name string, files map[string]string) string {
 	f.t.Helper()
+	return f.linkedRepository(name, files, nil)
+}
+
+// linkedRepository is repository with symlinks too, each path to its target.
+func (f *refreshFixture) linkedRepository(name string, files, links map[string]string) string {
+	f.t.Helper()
 	work := filepath.Join(f.root, "source-"+name)
 	f.git(f.root, "init", "--quiet", "-b", "main", work)
 	files["source.txt"] = "Original implementation\n"
 	writeTree(f.t, work, files)
+	for link, target := range links {
+		require.NoError(f.t, os.Symlink(target, filepath.Join(work, filepath.FromSlash(link))))
+	}
 	f.git(work, "add", ".")
 	f.git(work, "commit", "--quiet", "-m", "Initial fixture")
 	remote := filepath.Join(f.root, name+".git")
 	f.git(f.root, "clone", "--quiet", "--bare", work, remote)
 	f.missing(name)
 	return remote
+}
+
+// empty adds a repository that has no commit to the batch.
+func (f *refreshFixture) empty(name string) {
+	f.t.Helper()
+	f.git(f.root, "init", "--quiet", "--bare", "-b", "main", filepath.Join(f.root, name+".git"))
+	f.missing(name)
 }
 
 // missing adds a repository to the batch without creating it.
@@ -186,13 +205,16 @@ func (f *refreshFixture) wiring() dependencies {
 			return f.pullRequests
 		},
 	}
+	factory := claudeCodeAgent(fakeClaudePath(), func() []string { return agent })
+	if f.agentDouble != nil {
+		factory = func(io.Writer, []string) repositories.AgentRepository { return f.agentDouble }
+	}
 	return dependencies{
-		hosting:     providers,
-		clones:      f.clones,
-		agentBinary: fakeClaudePath(),
-		environ:     func() []string { return agent },
-		getenv:      func(name string) string { return f.variables[name] },
-		now:         time.Now,
+		hosting: providers,
+		clones:  f.clones,
+		agent:   factory,
+		getenv:  func(name string) string { return f.variables[name] },
+		now:     time.Now,
 	}
 }
 

@@ -105,7 +105,7 @@ func targetSources(
 	sources := []commands.RefreshTargetSource{}
 	for _, organization := range loaded.organizations(provider) {
 		source := commands.RefreshTargetSource{Organization: organization.name, Credential: organization.credential}
-		if organization.token == "" {
+		if isUnsetToken(organization.token) {
 			source.Unavailable = "no token: its token variable is empty or not set"
 			if organization.credential != "" {
 				source.Unavailable = "no token: the '" + organization.credential + "' secret is empty or not set"
@@ -162,29 +162,31 @@ func reportDiscovery(
 
 // matrixOutputs encodes the batches as the dialect's jobs read them: an Azure
 // Pipelines matrix is an object of string variables keyed by leg, anything
-// else an array a GitHub Actions matrix expands directly.
+// else an array a GitHub Actions matrix expands directly. Both carry the
+// organizations that could not be listed, so a later job can fail the run.
 func matrixOutputs(dialect string, batches []entities.RefreshBatch, failed []string) ([]output, error) {
 	count := output{name: "count", value: strconv.Itoa(len(batches))}
+	unreachable, err := compactJSON(failed)
+	if err != nil {
+		return nil, err
+	}
+	organizations := output{name: "failed_organizations", value: unreachable}
 	if dialect == dialectAzurePipelines {
-		matrix, err := mapToAzureMatrix(batches, compactJSON)
-		if err != nil {
-			return nil, err
+		matrix, mapErr := mapToAzureMatrix(batches, compactJSON)
+		if mapErr != nil {
+			return nil, mapErr
 		}
-		encoded, err := compactJSON(matrix)
-		if err != nil {
-			return nil, err
+		encoded, encodeErr := compactJSON(matrix)
+		if encodeErr != nil {
+			return nil, encodeErr
 		}
-		return []output{{name: "repoMatrix", value: encoded}, count}, nil
+		return []output{{name: "repoMatrix", value: encoded}, count, organizations}, nil
 	}
 	matrix, err := compactJSON(mapToGithubMatrix(batches))
 	if err != nil {
 		return nil, err
 	}
-	unreachable, err := compactJSON(failed)
-	if err != nil {
-		return nil, err
-	}
-	return []output{{name: "matrix", value: matrix}, count, {name: "failed_organizations", value: unreachable}}, nil
+	return []output{{name: "matrix", value: matrix}, count, organizations}, nil
 }
 
 // compactJSON encodes value on one line, as a step output must be.

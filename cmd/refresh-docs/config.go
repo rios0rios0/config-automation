@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	forgeconfig "github.com/rios0rios0/gitforge/v4/pkg/config/domain/entities"
@@ -129,6 +130,19 @@ func (c configuration) organizations(provider entities.Provider) []configuredOrg
 		}
 	}
 	return listed
+}
+
+// referencedTokenVariables returns the names of the variables the providers'
+// tokens read, `${NAME}`, which the agent must not inherit either.
+func (c configuration) referencedTokenVariables() []string {
+	reference := regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+	names := []string{}
+	for _, entry := range c.Providers {
+		for _, match := range reference.FindAllStringSubmatch(entry.Token, -1) {
+			names = append(names, match[1])
+		}
+	}
+	return names
 }
 
 // instructionFiles applies the configuration's overrides to the provider's

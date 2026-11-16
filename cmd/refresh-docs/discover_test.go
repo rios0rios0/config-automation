@@ -195,6 +195,26 @@ func TestDiscoverTargets(t *testing.T) {
 			DefaultBranch: "main",
 		}}, repos)
 		assert.Contains(t, run.stdout, "##vso[task.setvariable variable=count;isoutput=true]1\n")
+		assert.Equal(t, "FIXTUREORG_SECRET", matrix["batch_01"].Credential)
+		assert.Contains(t, run.stdout, "##vso[task.setvariable variable=failed_organizations;isoutput=true][]\n")
+	})
+
+	t.Run("should list an unreachable organization for the Azure Pipelines verify job", func(t *testing.T) {
+		t.Parallel()
+		// given
+		fixture := newDiscoverFixture(t, entities.ProviderAzureDevOps)
+		fixture.organization("FixtureOrg", "fixture-token", entities.RefreshTarget{
+			Organization: "FixtureOrg", Project: "Fixture Project", Name: "reachable", DefaultBranch: "main",
+		})
+		fixture.tokens["OtherOrg"], fixture.order = "expired-token", append(fixture.order, "OtherOrg")
+
+		// when
+		run := fixture.run("--ci", dialectAzurePipelines)
+
+		// then
+		require.Equal(t, 0, run.code, run.stdout+run.stderr)
+		assert.Contains(t, run.stdout,
+			"##vso[task.setvariable variable=failed_organizations;isoutput=true][\"OtherOrg\"]\n")
 	})
 
 	t.Run("should refuse a single repository the schedule leaves out", func(t *testing.T) {

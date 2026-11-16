@@ -61,13 +61,13 @@ func (c *DiscoverRefreshScopeCommand) discover(
 	}
 	// An import stays in the manifest for drift and staging, but only the
 	// host writes it, so it never receives an edit grant. The root one is
-	// listed even while absent: the host adds it once the refresh creates
-	// AGENTS.md.
+	// listed even while absent when the refresh may create AGENTS.md: the host
+	// adds it once the refresh does.
 	managed, err := c.managedImports(ctx, root, tracked.existing)
 	if err != nil {
 		return entities.RefreshScope{}, err
 	}
-	if files.Claude && !tracked.existing[entities.ClaudeFile] {
+	if files.Claude && files.Agents && !tracked.existing[entities.ClaudeFile] {
 		safe, safeErr := isSafeFile(ctx, c.workingTree, root, entities.ClaudeFile)
 		if safeErr != nil {
 			return entities.RefreshScope{}, safeErr
@@ -169,8 +169,9 @@ func (c *DiscoverRefreshScopeCommand) managedImports(
 }
 
 // creatableDocuments returns the files the refresh may create: the targets
-// the instruction files allow and the AGENTS.md every import points at, when
-// absent, safe to write, and not ignored by the repository.
+// the instruction files allow and, when AGENTS.md may be created at all, the
+// AGENTS.md every import points at; each only when absent, safe to write, and
+// not ignored by the repository.
 func (c *DiscoverRefreshScopeCommand) creatableDocuments(
 	ctx context.Context,
 	root string,
@@ -178,8 +179,10 @@ func (c *DiscoverRefreshScopeCommand) creatableDocuments(
 	existing, managed map[string]bool,
 ) (map[string]bool, error) {
 	candidates := files.CreatablePaths()
-	for document := range managed {
-		candidates = append(candidates, path.Join(path.Dir(document), entities.AgentsFile))
+	if files.Agents {
+		for document := range managed {
+			candidates = append(candidates, path.Join(path.Dir(document), entities.AgentsFile))
+		}
 	}
 	creatable := map[string]bool{}
 	for _, candidate := range candidates {

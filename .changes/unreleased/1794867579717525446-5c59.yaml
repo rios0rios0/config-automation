@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed four smaller gaps in the config-and-docs refresh: a token Azure Pipelines left as the literal `$(NAME)` of an undefined variable now stops the run instead of failing every clone, an agent adapter that panics no longer leaves the GitHub Actions stop-commands block open, a symlinked chlog configuration now selects the chlog convention, and an empty GitHub repository is reported as `no_drift` instead of failing `checkout:` every week'
+time: '2026-11-16T22:19:39.71747641Z'

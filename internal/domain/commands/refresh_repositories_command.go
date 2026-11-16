@@ -201,7 +201,19 @@ func (r *repositoryRefresh) prepare(ctx context.Context) bool {
 	if err := command.clones.Clone(ctx, url, r.root, r.batch.credential); err != nil {
 		return r.fail(entities.FailureClone, err)
 	}
-	if err := command.changes.Checkout(ctx, r.root, r.target.DefaultBranch); err != nil {
+	// GitHub reports a default branch even for an empty repository, so
+	// discovery cannot leave every empty one out; its clone has no commit to
+	// refresh.
+	present, err := command.changes.HasRevision(ctx, r.root, "refs/remotes/origin/"+r.target.DefaultBranch)
+	if err != nil {
+		return r.fail(entities.FailureCheckout, err)
+	}
+	if !present {
+		r.batch.listeners.OnNotice("--> the default branch has no commit yet; nothing to refresh.")
+		r.batch.summary.NoDrift = append(r.batch.summary.NoDrift, r.name)
+		return false
+	}
+	if err = command.changes.Checkout(ctx, r.root, r.target.DefaultBranch); err != nil {
 		return r.fail(entities.FailureCheckout, err)
 	}
 	return true
@@ -267,7 +279,10 @@ func (r *repositoryRefresh) discoverScope(ctx context.Context) bool {
 }
 
 // detectChangelog decides the repository's changelog convention, which the
-// grants enforce rather than the prompt alone.
+// grants enforce rather than the prompt alone. A symlink at a chlog path
+// counts, as the pipelines predicate's `-f` and `-d` follow one: reading it as
+// chlog is the safe side, since that convention grants no edit of
+// CHANGELOG.md.
 func (r *repositoryRefresh) detectChangelog(ctx context.Context) bool {
 	hasConfig := false
 	for _, file := range entities.ChlogConfigFiles() {
@@ -275,7 +290,7 @@ func (r *repositoryRefresh) detectChangelog(ctx context.Context) bool {
 		if err != nil {
 			return r.fail(entities.FailureScope, err)
 		}
-		hasConfig = hasConfig || kind == entities.PathFile
+		hasConfig = hasConfig || kind == entities.PathFile || kind == entities.PathSymlink
 	}
 	fragments, err := r.batch.command.workingTree.FindKind(ctx, r.root, entities.ChlogFragmentDirectory)
 	if err != nil {
@@ -285,16 +300,27 @@ func (r *repositoryRefresh) detectChangelog(ctx context.Context) bool {
 	if err != nil {
 		return r.fail(entities.FailureScope, err)
 	}
-	r.mode = entities.DetectChangelogMode(
-		hasConfig, fragments == entities.PathDirectory, changelog == entities.PathFile)
+	r.mode = entities.DetectChangelogMode(hasConfig,
+		fragments == entities.PathDirectory || fragments == entities.PathSymlink, changelog == entities.PathFile)
 	r.batch.listeners.OnNotice("--> changelog convention: " + string(r.mode))
 	return true
 }
 
-// runAgent runs the read-only audit and then the scoped refresh. Their output
-// streams between the agent listeners; a failure is classified only after the
-// stream ends, so its annotation is never swallowed by a CI's stop-commands.
+// runAgent runs the read-only audit and then the scoped refresh. A failure is
+// classified only after the agent's stream ends, so its annotation is never
+// swallowed by a CI's stop-commands.
 func (r *repositoryRefresh) runAgent(ctx context.Context) bool {
+	result, err := r.runAgentPhases(ctx)
+	if err == nil {
+		return true
+	}
+	return r.agentFailed(result.Output, err)
+}
+
+// runAgentPhases runs both phases between the agent listeners. The stream is
+// closed however the phases end, a panic included: left open, a CI's
+// stop-commands would swallow every annotation the rest of the batch prints.
+func (r *repositoryRefresh) runAgentPhases(ctx context.Context) (entities.AgentResult, error) {
 	settings := r.batch.input.Settings
 	listeners := r.batch.listeners
 	audit := entities.AgentRun{
@@ -303,6 +329,7 @@ func (r *repositoryRefresh) runAgent(ctx context.Context) bool {
 		Tools: entities.AuditTools(), AllowedTools: entities.AuditTools(),
 	}
 	listeners.OnAgentStarted()
+	defer listeners.OnAgentFinished()
 	listeners.OnNotice("--> prompt audit (read-only)")
 	result, err := r.batch.command.agent.Audit(ctx, audit)
 	if err == nil {
@@ -315,11 +342,7 @@ func (r *repositoryRefresh) runAgent(ctx context.Context) bool {
 			Tools: entities.RefreshTools(grant), AllowedTools: entities.RefreshAllowedTools(r.scope, grant),
 		})
 	}
-	listeners.OnAgentFinished()
-	if err == nil {
-		return true
-	}
-	return r.agentFailed(result.Output, err)
+	return result, err
 }
 
 // agentFailed records a failed Claude phase by what its output says.
