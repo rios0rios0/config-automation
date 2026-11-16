@@ -191,6 +191,36 @@ func TestGitWorkingTreeRepositoryChanges(t *testing.T) {
 		assert.Equal(t, []string{"New guidance"}, entities.AddedLines(diff))
 	})
 
+	t.Run("should diff a file the repository marks as binary as text", func(t *testing.T) {
+		t.Parallel()
+		// given
+		root := committed(t, map[string]string{"README.md": "Read me\n", ".gitattributes": "*.md -diff\n"})
+		writeFiles(t, root, map[string]string{"README.md": "Read me\nAdded line\n"})
+
+		// when
+		diff, err := changes.FindDiff(t.Context(), root, []string{"README.md"})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{"Added line"}, entities.AddedLines(diff))
+	})
+
+	t.Run("should tell whether a revision names a commit", func(t *testing.T) {
+		t.Parallel()
+		// given
+		root := committed(t, map[string]string{"README.md": "Read me\n"})
+
+		// when
+		present, presentErr := changes.HasRevision(t.Context(), root, "refs/heads/main")
+		absent, absentErr := changes.HasRevision(t.Context(), root, "refs/remotes/origin/main")
+
+		// then
+		require.NoError(t, presentErr)
+		require.NoError(t, absentErr)
+		assert.True(t, present)
+		assert.False(t, absent)
+	})
+
 	t.Run("should take a path literally rather than as a pattern", func(t *testing.T) {
 		t.Parallel()
 		// given

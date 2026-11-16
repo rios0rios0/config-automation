@@ -32,16 +32,27 @@ type hosting struct {
 	pullRequests func(token string) repositories.PullRequestsRepository
 }
 
+// agentFactory builds the agent for one batch: live receives its output as it
+// streams, and withheld names the variables it must not inherit.
+type agentFactory func(live io.Writer, withheld []string) repositories.AgentRepository
+
 // dependencies are what the subcommands are wired from. Tests replace the
-// hosting adapters, the clones, and the agent binary; everything else is the
+// hosting adapters, the clones, and the agent; everything else is the
 // production wiring.
 type dependencies struct {
-	hosting     map[entities.Provider]hosting
-	clones      repositories.ClonesRepository
-	agentBinary string
-	environ     func() []string
-	getenv      func(string) string
-	now         func() time.Time
+	hosting map[entities.Provider]hosting
+	clones  repositories.ClonesRepository
+	agent   agentFactory
+	getenv  func(string) string
+	now     func() time.Time
+}
+
+// claudeCodeAgent builds the agent over the claude CLI on PATH, starting from
+// environ.
+func claudeCodeAgent(binary string, environ func() []string) agentFactory {
+	return func(live io.Writer, withheld []string) repositories.AgentRepository {
+		return infrastructure.NewClaudeCodeAgentRepository(binary, environ, live, withheld)
+	}
 }
 
 // defaultDependencies is the production wiring: GitHub discovery over the
@@ -80,11 +91,10 @@ func defaultDependencies() dependencies {
 				},
 			},
 		},
-		clones:      infrastructure.NewGitClonesRepository(),
-		agentBinary: "claude",
-		environ:     os.Environ,
-		getenv:      os.Getenv,
-		now:         time.Now,
+		clones: infrastructure.NewGitClonesRepository(),
+		agent:  claudeCodeAgent("claude", os.Environ),
+		getenv: os.Getenv,
+		now:    time.Now,
 	}
 }
 
@@ -111,11 +121,10 @@ func newRefreshCommand(
 ) *commands.RefreshRepositoriesCommand {
 	workingTree := infrastructure.NewGitWorkingTreeRepository(identity)
 	return commands.NewRefreshRepositoriesCommand(commands.RefreshRepositoriesDependencies{
-		WorkingTree: workingTree,
-		Changes:     workingTree,
-		Clones:      wiring.clones,
-		Agent: infrastructure.NewClaudeCodeAgentRepository(
-			wiring.agentBinary, wiring.environ, agentOutput, withheld),
+		WorkingTree:  workingTree,
+		Changes:      workingTree,
+		Clones:       wiring.clones,
+		Agent:        wiring.agent(agentOutput, withheld),
 		PullRequests: wiring.hosting[provider].pullRequests(token),
 		Now:          wiring.now,
 	})

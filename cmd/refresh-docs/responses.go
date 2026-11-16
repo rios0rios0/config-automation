@@ -53,9 +53,11 @@ type githubBatchResponse struct {
 }
 
 // azureBatchResponse is one Azure Pipelines matrix leg. Matrix values must
-// be strings, so the repositories are a JSON document in one.
+// be strings, so the repositories are a JSON document in one. Credential is
+// always present, possibly empty, so `$(credential)` never stays a literal.
 type azureBatchResponse struct {
-	Repos string `json:"repos"`
+	Repos      string `json:"repos"`
+	Credential string `json:"credential"`
 }
 
 // mapToRefreshScopeResponse maps a refresh manifest to its JSON shape.
@@ -133,7 +135,10 @@ func mapToAzureMatrix(batches []entities.RefreshBatch, encode func(any) (string,
 		if err != nil {
 			return nil, err
 		}
-		matrix[fmt.Sprintf(adoMatrixKeyFormat, index+1)] = azureBatchResponse{Repos: repos}
+		matrix[fmt.Sprintf(adoMatrixKeyFormat, index+1)] = azureBatchResponse{
+			Repos:      repos,
+			Credential: batch.Credential,
+		}
 	}
 	return matrix, nil
 }

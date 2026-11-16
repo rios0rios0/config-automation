@@ -1,6 +1,7 @@
 # The config-and-docs refresh as Azure Pipelines jobs: `discover` lists the
-# organizations of the consumer's configuration file into a matrix, and each
-# `refresh` leg runs `refresh-docs run` on one batch. The consumer owns the
+# organizations of the consumer's configuration file into a matrix, each
+# `refresh` leg runs `refresh-docs run` on one batch, and `verify` fails the run
+# when an organization could not be listed. The consumer owns the
 # stage around these jobs, its condition and its `dependsOn`, and its
 # variables, which must provide the secrets AZURE_DEVOPS_PAT and
 # CLAUDE_CODE_OAUTH_TOKEN; it may also set CLAUDE_MODEL and CLAUDE_EFFORT. Every
@@ -31,8 +32,10 @@ parameters:
     type: 'number'
     default: 50
   # More variables for both steps, as `NAME: '$(variable)'`: whatever `${VAR}`
-  # the configuration file reads, such as the git identity. Azure Pipelines
-  # gives a step only its non-secret variables unless they are mapped.
+  # the configuration file reads, such as the git identity or the token of a
+  # second organization. Azure Pipelines gives a step only its non-secret
+  # variables unless they are mapped. `refresh-docs run` withholds every token
+  # variable the configuration names from Claude Code.
   - name: 'environment'
     type: 'object'
     default: {}
@@ -98,9 +101,13 @@ jobs:
         workingDirectory: '$(Pipeline.Workspace)/tool'
         displayName: 'Install refresh tools'
 
+      # A leg's `credential` is the `credential` of its organization in the
+      # configuration: the variable holding that organization's token, mapped
+      # through `environment`. Without one, the token is AZURE_DEVOPS_PAT.
       - bash: |
           set -euo pipefail
           refresh-docs run --config "$(Pipeline.Workspace)/consumer/${CONFIG_FILE}" \
+            --token-env "${CREDENTIAL:-AZURE_DEVOPS_PAT}" \
             --work-dir "$(Agent.TempDirectory)/refresh-work" --ci azure-pipelines
         workingDirectory: '$(Pipeline.Workspace)/tool'
         env:
@@ -110,7 +117,33 @@ jobs:
           CLAUDE_EFFORT: '$(refreshEffort)'
           CONFIG_FILE: '${{ parameters.configFile }}'
           REPOS: '$(repos)'
+          CREDENTIAL: '$(credential)'
           MAX_TURNS: '${{ parameters.maxTurns }}'
           ${{ each variable in parameters.environment }}:
             ${{ variable.key }}: '${{ variable.value }}'
         displayName: 'Process batch'
+
+  # `discover` keeps going when an organization cannot be listed, so the
+  # reachable ones are still refreshed. This job is what stops that tolerance
+  # from becoming a green run that covered only part of the fleet.
+  - job: 'verify'
+    displayName: 'Verify every organization was reachable'
+    dependsOn: ['discover', 'refresh']
+    condition: not(canceled())
+    variables:
+      failedOrganizations: $[ dependencies.discover.outputs['set_matrix.failed_organizations'] ]
+    steps:
+      - checkout: 'none'
+      - bash: |
+          set -euo pipefail
+          # Empty when `discover` failed before writing its outputs, which
+          # already turns the run red.
+          if [ -z "${FAILED_ORGANIZATIONS}" ] || [ "${FAILED_ORGANIZATIONS}" = '[]' ]; then
+            echo 'Every configured organization was enumerated.'
+            exit 0
+          fi
+          echo "##vso[task.logissue type=error]These organizations could not be enumerated and were skipped entirely: ${FAILED_ORGANIZATIONS}"
+          exit 1
+        env:
+          FAILED_ORGANIZATIONS: '$(failedOrganizations)'
+        displayName: 'Fail when an organization could not be enumerated'

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"slices"
 	"strconv"
 
 	"github.com/rios0rios0/config-automation/internal/domain/commands"
@@ -18,9 +20,9 @@ import (
 // could clone nothing private and open no pull request.
 var errNoToken = errors.New("no token")
 
-// tokenVariables are the variables that hold a hosting token, whichever
+// hostingTokenVariables are the variables that hold a hosting token, whichever
 // provider a run is for. None of them reaches the agent.
-func tokenVariables() []string {
+func hostingTokenVariables() []string {
 	return []string{"GH_TOKEN", "GITHUB_TOKEN", "AZURE_DEVOPS_PAT", "AZURE_DEVOPS_EXT_PAT", "SYSTEM_ACCESSTOKEN"}
 }
 
@@ -75,7 +77,7 @@ func refreshBatch(ctx context.Context, arguments []string, output streams, wirin
 	}
 	tokenEnv := valueOr(options.tokenEnv, defaultTokenVariables()[provider])
 	token := wiring.getenv(tokenEnv)
-	if token == "" {
+	if isUnsetToken(token) {
 		return failure(output, "run", fmt.Errorf("%w: %s is empty or not set", errNoToken, tokenEnv))
 	}
 	workDirectory, cleanup, err := scratchDirectory(options.workDir)
@@ -83,8 +85,8 @@ func refreshBatch(ctx context.Context, arguments []string, output streams, wirin
 		return failure(output, "run", err)
 	}
 	defer cleanup()
-	command := newRefreshCommand(wiring, provider, token, loaded.identity(),
-		printer.AgentOutput(), append(tokenVariables(), tokenEnv))
+	withheld := slices.Concat(hostingTokenVariables(), loaded.referencedTokenVariables(), []string{tokenEnv})
+	command := newRefreshCommand(wiring, provider, token, loaded.identity(), printer.AgentOutput(), withheld)
 	code := 0
 	command.Execute(ctx, commands.RefreshRepositoriesInput{
 		Targets: targets, WorkDirectory: workDirectory, Token: token,
@@ -152,6 +154,12 @@ func parseRunOptions(arguments []string, getenv func(string) string) (runOptions
 		return options, fmt.Errorf("--max-turns must be positive, not %d", options.maxTurns)
 	}
 	return options, nil
+}
+
+// isUnsetToken reports a token that is empty, or that Azure Pipelines left as
+// the literal `$(NAME)` macro of a variable nobody defined.
+func isUnsetToken(token string) bool {
+	return token == "" || regexp.MustCompile(`^\$\([^)]*\)$`).MatchString(token)
 }
 
 // parseBatch reads the batch's repositories.

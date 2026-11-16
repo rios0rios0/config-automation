@@ -16,6 +16,9 @@ const (
 	fineGrainedBodyLength  = 82
 	anthropicBodyLength    = 95
 	accessKeyBodyLength    = 16
+	// azureBodyLength is how many characters precede the fixed signature of
+	// an Azure DevOps token in its 84-character format.
+	azureBodyLength = 76
 	// largeDiffLines pushes a diff well past any 64 KiB line-reader buffer.
 	largeDiffLines = 4096
 )
@@ -31,6 +34,7 @@ func credentialShapes() map[string]string {
 		"an Anthropic token":          "sk-" + "ant-" + "oat01-" + strings.Repeat("aZ0_-", anthropicBodyLength)[:anthropicBodyLength],
 		"an AWS access key":           "AK" + "IA" + strings.Repeat("Z9", accessKeyBodyLength)[:accessKeyBodyLength],
 		"a JWT":                       "ey" + strings.Repeat("J", 17) + ".ey" + "J",
+		"an Azure DevOps token":       strings.Repeat("Q7", azureBodyLength)[:azureBodyLength] + "AZ" + "DO" + "x9Y1",
 	}
 }
 

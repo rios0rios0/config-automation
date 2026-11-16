@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'stopped the secret-shape guard from passing a credential added to a file the repository''s `.gitattributes` marks as binary or routes through a diff driver, by reading the refresh diff as text with no external driver or text conversion'
+time: '2026-11-16T22:19:39.713449028Z'

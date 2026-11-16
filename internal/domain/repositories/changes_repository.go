@@ -37,6 +37,9 @@ type ChangesRepository interface {
 	// HasStagedChanges reports whether the index differs from HEAD.
 	HasStagedChanges(ctx context.Context, root string) (bool, error)
 
+	// HasRevision reports whether revision names a commit, such as a remote
+	// branch an empty repository does not have.
+	HasRevision(ctx context.Context, root, revision string) (bool, error)
 	// IsAhead reports whether HEAD holds commits that base does not.
 	IsAhead(ctx context.Context, root, base string) (bool, error)
 }

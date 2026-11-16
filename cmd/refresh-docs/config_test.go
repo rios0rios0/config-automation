@@ -118,6 +118,37 @@ func TestConfiguration(t *testing.T) {
 	})
 }
 
+func TestReferencedTokenVariables(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should name every variable the providers' tokens read", func(t *testing.T) {
+		t.Parallel()
+		// given
+		loaded := configuration{Providers: []providerConfiguration{
+			{Token: "${FIRST_TOKEN}"}, {Token: "prefix-${SECOND_TOKEN}-${THIRD}"}, {Token: "literal"},
+		}}
+
+		// when
+		names := loaded.referencedTokenVariables()
+
+		// then
+		assert.Equal(t, []string{"FIRST_TOKEN", "SECOND_TOKEN", "THIRD"}, names)
+	})
+}
+
+func TestIsUnsetToken(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should treat an empty token and an undefined Azure macro as unset", func(t *testing.T) {
+		t.Parallel()
+		// given / when / then
+		assert.True(t, isUnsetToken(""))
+		assert.True(t, isUnsetToken("$(AZURE_DEVOPS_PAT)"))
+		assert.False(t, isUnsetToken(fixtureToken))
+		assert.False(t, isUnsetToken("$(partial"))
+	})
+}
+
 func TestInstructionFlags(t *testing.T) {
 	t.Parallel()
 

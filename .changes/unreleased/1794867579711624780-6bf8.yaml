@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'withheld every variable a configured provider token reads from Claude Code''s environment, not only the run''s own token, and let each Azure Pipelines leg run with its organization''s `credential` instead of always `AZURE_DEVOPS_PAT`'
+time: '2026-11-16T22:19:39.711576325Z'

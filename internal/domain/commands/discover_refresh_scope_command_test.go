@@ -16,15 +16,25 @@ import (
 
 const documentation = "# Documentation\n"
 
-// discoverScope runs the command against tree and returns what reached the
-// listeners.
+// discoverScope runs the command against tree with the GitHub defaults and
+// returns what reached the listeners.
 func discoverScope(t *testing.T, tree *doubles.InMemoryWorkingTreeRepository) (entities.RefreshScope, error) {
+	t.Helper()
+	return discoverScopeWith(t, tree, githubFiles())
+}
+
+// discoverScopeWith runs the command with the given instruction files.
+func discoverScopeWith(
+	t *testing.T,
+	tree *doubles.InMemoryWorkingTreeRepository,
+	files entities.InstructionFiles,
+) (entities.RefreshScope, error) {
 	t.Helper()
 	var scope entities.RefreshScope
 	var failure error
 	commands.NewDiscoverRefreshScopeCommand(tree).Execute(
 		t.Context(),
-		commands.DiscoverRefreshScopeInput{Root: "/repository", InstructionFiles: githubFiles()},
+		commands.DiscoverRefreshScopeInput{Root: "/repository", InstructionFiles: files},
 		commands.DiscoverRefreshScopeListeners{
 			OnSuccess: func(result entities.RefreshScope) { scope = result },
 			OnError:   func(err error) { failure = err },
@@ -138,6 +148,26 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 		// then
 		require.NoError(t, err)
 		assert.Contains(t, scope.Creatable, "AGENTS.md")
+	})
+
+	t.Run("should offer no AGENTS.md at all when agents is off", func(t *testing.T) {
+		t.Parallel()
+		// given
+		tree := doubles.NewInMemoryWorkingTreeRepository().WithTrackedFiles(map[string]string{
+			"README.md": documentation, "packages/api/CLAUDE.md": entities.AgentsImport,
+		})
+		files := entities.InstructionFiles{Claude: true, Copilot: true}
+
+		// when
+		scope, err := discoverScopeWith(t, tree, files)
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, files.CreatablePaths(), scope.Creatable)
+		assert.NotContains(t, scope.Creatable, "AGENTS.md")
+		assert.NotContains(t, scope.Creatable, "packages/api/AGENTS.md")
+		assert.NotContains(t, scope.Managed, "CLAUDE.md", "an import was managed for an AGENTS.md nothing may create")
+		assert.NotContains(t, scope.AllowedTools, "Edit(/AGENTS.md)")
 	})
 
 	t.Run("should not offer AGENTS.md when the repository ignores it", func(t *testing.T) {

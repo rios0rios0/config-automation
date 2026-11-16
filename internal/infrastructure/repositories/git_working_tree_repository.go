@@ -35,6 +35,11 @@ const (
 	literalPathspec = ":(literal)"
 	// gitDiff is the subcommand every change question asks.
 	gitDiff = "diff"
+	// noExternalDiff and noTextConversion keep the repository's own
+	// `.gitattributes` from replacing a diff with an external driver or a
+	// text conversion.
+	noExternalDiff   = "--no-ext-diff"
+	noTextConversion = "--no-textconv"
 )
 
 // GitWorkingTreeRepository implements repositories.WorkingTreeRepository and
@@ -223,21 +228,26 @@ func (r *GitWorkingTreeRepository) MarkIntentToAdd(ctx context.Context, root str
 
 // HasChanges asks `git diff HEAD --quiet -w` about paths.
 func (r *GitWorkingTreeRepository) HasChanges(ctx context.Context, root string, paths []string) (bool, error) {
-	return r.differs(ctx, root, append([]string{gitDiff, "HEAD", "--quiet", "-w", "--"}, literal(paths...)...)...)
+	return r.differs(ctx, root, append(
+		[]string{gitDiff, "HEAD", "--quiet", noExternalDiff, noTextConversion, "-w", "--"}, literal(paths...)...)...)
 }
 
-// FindDiff returns `git diff HEAD -U0` of paths; no paths is no diff.
+// FindDiff returns `git diff HEAD -U0` of paths, every file read as text,
+// so a repository that marks a path `-diff` or `binary` cannot turn its added
+// lines into "Binary files differ"; no paths is no diff.
 func (r *GitWorkingTreeRepository) FindDiff(ctx context.Context, root string, paths []string) (string, error) {
 	if len(paths) == 0 {
 		return "", nil
 	}
-	return r.git(ctx, root, append([]string{gitDiff, "HEAD", "-U0", "--"}, literal(paths...)...)...)
+	return r.git(ctx, root, append(
+		[]string{gitDiff, "HEAD", "--text", noExternalDiff, noTextConversion, "-U0", "--"}, literal(paths...)...)...)
 }
 
 // HasUnstagedChanges asks `git diff --quiet` whether path differs between
 // the index and the working tree.
 func (r *GitWorkingTreeRepository) HasUnstagedChanges(ctx context.Context, root, path string) (bool, error) {
-	return r.differs(ctx, root, append([]string{gitDiff, "--quiet", "--"}, literal(path)...)...)
+	return r.differs(ctx, root, append(
+		[]string{gitDiff, "--quiet", noExternalDiff, noTextConversion, "--"}, literal(path)...)...)
 }
 
 // Restore puts the index version of path back with `git checkout --`.
@@ -266,6 +276,20 @@ func (r *GitWorkingTreeRepository) FindUntracked(ctx context.Context, root, dire
 // differs from HEAD.
 func (r *GitWorkingTreeRepository) HasStagedChanges(ctx context.Context, root string) (bool, error) {
 	return r.differs(ctx, root, gitDiff, "--cached", "--quiet")
+}
+
+// HasRevision asks `git rev-parse --verify --quiet` whether revision names a
+// commit; an exit of 1 means it does not, any other failure is an error.
+func (r *GitWorkingTreeRepository) HasRevision(ctx context.Context, root, revision string) (bool, error) {
+	_, err := r.git(ctx, root, "rev-parse", "--verify", "--quiet", revision+"^{commit}")
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == differencesExitCode {
+		return false, nil
+	}
+	return false, err
 }
 
 // IsAhead counts the commits of HEAD that base lacks.

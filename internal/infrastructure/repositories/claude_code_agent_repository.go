@@ -18,6 +18,12 @@ import (
 	"github.com/rios0rios0/config-automation/internal/domain/repositories"
 )
 
+// procReadDenial keeps both phases out of /proc: the agent's own environment
+// holds no hosting token, but its parents' do, and /proc/<pid>/environ would
+// hand it over. A deny rule beats every grant, and Read rules also bind Grep
+// and Glob.
+const procReadDenial = "Read(//proc/**)"
+
 // agentWaitDelay bounds how long a finished or cancelled Claude run may keep
 // its output open through a process it started, so a lingering child cannot
 // hang the batch.
@@ -93,6 +99,7 @@ func (r *ClaudeCodeAgentRepository) arguments(run entities.AgentRun) []string {
 		"--model", run.Model, "--effort", run.Effort, "--max-turns", strconv.Itoa(run.MaxTurns),
 		"--setting-sources", "", "--strict-mcp-config",
 		"--tools", run.Tools, "--allowedTools", run.AllowedTools,
+		"--disallowedTools", procReadDenial,
 		"--permission-mode", "dontAsk",
 	}
 }
