@@ -1,3 +1,0 @@
-kind: 'Changed'
-body: 'moved the whole config-and-docs refresh (discovery, the per-repository batch, the prompt audit and refresh, the changelog and secret-shape guards, and the pull requests) from the workflow''s inline bash and `scripts/audit-and-refresh.sh` into the `refresh-docs` Go CLI, as `refresh-docs discover` and `refresh-docs run`, so GitHub Actions and Azure Pipelines run one implementation; the workflow now only installs the tools and calls it'
-time: '2026-11-16T21:37:12.906174056Z'
