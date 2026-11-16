@@ -1,0 +1,3 @@
+kind: 'Removed'
+body: 'removed the refresh''s activity gate, together with the `stale_after_days` dispatch input, the `unchanged` summary line and the scope manifest''s `has_guidance` field, so every run refreshes the whole fleet'
+time: '2026-11-16T20:26:18.713855435Z'

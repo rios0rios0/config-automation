@@ -9,7 +9,6 @@ type refreshScopeResponse struct {
 	Existing     []string `json:"existing"`
 	Creatable    []string `json:"creatable"`
 	Managed      []string `json:"managed"`
-	HasGuidance  bool     `json:"has_guidance"`
 	AllowedTools []string `json:"allowed_tools"`
 	Skipped      []string `json:"skipped"`
 }
@@ -34,7 +33,6 @@ func mapToRefreshScopeResponse(scope entities.RefreshScope) refreshScopeResponse
 		Existing:     scope.Existing,
 		Creatable:    scope.Creatable,
 		Managed:      scope.Managed,
-		HasGuidance:  scope.HasGuidance,
 		AllowedTools: scope.AllowedTools,
 		Skipped:      scope.Skipped,
 	}

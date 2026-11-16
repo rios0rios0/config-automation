@@ -77,7 +77,6 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 			grants = append(grants, "Edit(/"+path+")")
 		}
 		assert.Equal(t, slices.Concat(entities.ReadOnlyTools(), grants), scope.AllowedTools)
-		assert.True(t, scope.HasGuidance)
 	})
 
 	t.Run(
@@ -98,7 +97,6 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 			assert.NotContains(t, scope.AllowedTools, "Edit(/CLAUDE.md)")
 			assert.Empty(t, scope.Existing)
 			assert.Empty(t, scope.Skipped)
-			assert.False(t, scope.HasGuidance)
 		},
 	)
 
@@ -125,10 +123,9 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 			assert.NotContains(t, scope.AllowedTools, "Edit(/"+path+")")
 		}
 		assert.Contains(t, scope.AllowedTools, "Edit(/tools/AGENTS.md)")
-		assert.True(t, scope.HasGuidance)
 	})
 
-	t.Run("should not count an import as guidance when its AGENTS.md is missing", func(t *testing.T) {
+	t.Run("should offer the AGENTS.md an import points at when it is missing", func(t *testing.T) {
 		t.Parallel()
 		// given
 		tree := doubles.NewInMemoryWorkingTreeRepository().WithTrackedFiles(map[string]string{
@@ -140,7 +137,6 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 
 		// then
 		require.NoError(t, err)
-		assert.False(t, scope.HasGuidance)
 		assert.Contains(t, scope.Creatable, "AGENTS.md")
 	})
 
@@ -158,20 +154,6 @@ func TestDiscoverRefreshScopeCommand(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotContains(t, scope.Creatable, "AGENTS.md")
 		assert.NotContains(t, scope.AllowedTools, "Edit(/AGENTS.md)")
-	})
-
-	t.Run("should not count README and CONTRIBUTING as agent guidance", func(t *testing.T) {
-		t.Parallel()
-		// given
-		tree := doubles.NewInMemoryWorkingTreeRepository().
-			WithTrackedFiles(withContent([]string{"README.md", "CONTRIBUTING.md"}, documentation))
-
-		// when
-		scope, err := discoverScope(t, tree)
-
-		// then
-		require.NoError(t, err)
-		assert.False(t, scope.HasGuidance)
 	})
 
 	t.Run("should not grant an untracked file of a supported category", func(t *testing.T) {

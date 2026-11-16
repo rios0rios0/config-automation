@@ -17,9 +17,3 @@ func refreshRootDocuments() []string {
 		".github/copilot-instructions.md",
 	}
 }
-
-// humanDocuments returns the documents written for people, which alone do
-// not count as agent guidance.
-func humanDocuments() []string {
-	return []string{"README.md", "CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"}
-}

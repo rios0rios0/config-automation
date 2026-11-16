@@ -53,7 +53,7 @@ func TestRefreshBatchCredentials(t *testing.T) {
 			t.Parallel()
 			// given
 			fixture := newBatchFixture(t)
-			remote, _ := fixture.repository("token", compliant(map[string]string{"README.md": original}), false)
+			remote := fixture.repository("token", compliant(map[string]string{"README.md": original}))
 			token := fixture.env["GH_TOKEN"]
 
 			// when
@@ -80,7 +80,7 @@ func TestRefreshBatchCredentials(t *testing.T) {
 			t.Parallel()
 			// given
 			fixture := newBatchFixture(t)
-			remote, _ := fixture.repository("leak", compliant(map[string]string{"README.md": original}), false)
+			remote := fixture.repository("leak", compliant(map[string]string{"README.md": original}))
 
 			// when
 			run := fixture.run(map[string]any{"README.md": "Example: " + token + "\n"}, nil)
@@ -97,7 +97,7 @@ func TestRefreshBatchCredentials(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		remote, _ := fixture.repository("prose", compliant(map[string]string{"README.md": original}), false)
+		remote := fixture.repository("prose", compliant(map[string]string{"README.md": original}))
 		prose := "Never commit a `github_pat_` or `sk-ant-` value; use `fixture-token-placeholder`.\n"
 
 		// when
@@ -115,7 +115,7 @@ func TestRefreshBatchCredentials(t *testing.T) {
 			fixture := newBatchFixture(t)
 			files, path, content := changelogEntry(mode, "recorded the refresh")
 			files["README.md"] = original
-			remote, _ := fixture.repository(mode, compliant(files), false)
+			remote := fixture.repository(mode, compliant(files))
 
 			// when
 			run := fixture.run(map[string]any{"README.md": "Updated\n", path: content}, nil)
@@ -132,7 +132,7 @@ func TestRefreshBatchCredentials(t *testing.T) {
 			fixture := newBatchFixture(t)
 			files, path, content := changelogEntry(mode, "recorded "+anthropicTokenShape())
 			files["README.md"] = original
-			remote, _ := fixture.repository(mode, compliant(files), false)
+			remote := fixture.repository(mode, compliant(files))
 
 			// when
 			run := fixture.run(map[string]any{"README.md": "Updated\n", path: content}, nil)
