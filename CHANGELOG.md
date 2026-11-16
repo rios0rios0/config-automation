@@ -22,6 +22,20 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-16
+
+### Fixed
+
+- fixed an Azure Pipelines run of the config-and-docs refresh finishing green when one of its organizations could not be listed: discovery now reports `failed_organizations` there too, and the jobs template's new `verify` job fails the run after the reachable organizations are refreshed
+- fixed four smaller gaps in the config-and-docs refresh: a token Azure Pipelines left as the literal `$(NAME)` of an undefined variable now stops the run instead of failing every clone, an agent adapter that panics no longer leaves the GitHub Actions stop-commands block open, a symlinked chlog configuration now selects the chlog convention, and an empty GitHub repository is reported as `no_drift` instead of failing `checkout:` every week
+- fixed the config-and-docs refresh offering a root `AGENTS.md` for creation, and an `AGENTS.md` beside every dangling import, while the `agents` setting was off
+
+### Security
+
+- denied both Claude Code phases every read under `/proc`, where the parent processes' environments hold the hosting token, and added the 84-character Azure DevOps token to the shapes the secret-shape guard refuses
+- stopped the secret-shape guard from passing a credential added to a file the repository's `.gitattributes` marks as binary or routes through a diff driver, by reading the refresh diff as text with no external driver or text conversion
+- withheld every variable a configured provider token reads from Claude Code's environment, not only the run's own token, and let each Azure Pipelines leg run with its organization's `credential` instead of always `AZURE_DEVOPS_PAT`
+
 ## [0.12.0] - 2026-11-16
 
 ### Added
