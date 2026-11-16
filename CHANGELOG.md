@@ -22,6 +22,14 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-16
+
+### Changed
+
+- changed `github.com/google/go-github/v75` to `github.com/google/go-github/v93`, which authenticates with its own token option instead of `golang.org/x/oauth2` (no longer a dependency) and sends the token only to the GitHub API
+- changed the Go modules `golang.org/x/oauth2` from `v0.37.0` to `v0.38.0` and `golang.org/x/sys` from `v0.49.0` to `v0.50.0`
+- changed the Go version from `1.27.3` to `1.27.4`
+
 ## [0.11.1] - 2026-11-04
 
 ### Changed
