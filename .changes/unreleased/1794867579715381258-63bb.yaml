@@ -1,3 +1,0 @@
-kind: 'Security'
-body: 'denied both Claude Code phases every read under `/proc`, where the parent processes'' environments hold the hosting token, and added the 84-character Azure DevOps token to the shapes the secret-shape guard refuses'
-time: '2026-11-16T22:19:39.715336101Z'

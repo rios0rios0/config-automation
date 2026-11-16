@@ -1,3 +1,0 @@
-kind: 'Fixed'
-body: 'fixed an Azure Pipelines run of the config-and-docs refresh finishing green when one of its organizations could not be listed: discovery now reports `failed_organizations` there too, and the jobs template''s new `verify` job fails the run after the reachable organizations are refreshed'
-time: '2026-11-16T22:19:39.709567588Z'
