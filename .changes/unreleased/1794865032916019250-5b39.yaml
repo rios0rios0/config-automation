@@ -1,3 +1,0 @@
-kind: 'Changed'
-body: 'changed the config-and-docs refresh to leave disabled and empty repositories out as well as forks and archived ones, and to refuse a single-repository dispatch of any of them'
-time: '2026-11-16T21:37:12.915980992Z'

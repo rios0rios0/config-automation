@@ -22,6 +22,33 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-16
+
+### Added
+
+- added `.config-automation.yaml`, the owners the config-and-docs refresh walks with the variables that hold their tokens, and `scripts/install-refresh-tools.sh`, the one place the Claude Code CLI range and the chlog version and checksum are pinned for both CI systems
+- added Azure DevOps support to the config-and-docs refresh: `azuredevops` organizations in the configuration file, discovery and pull requests through gitforge, percent-encoded clone and pull-request URLs, an Azure Pipelines presenter that defuses logging commands in repository-controlled output and ends a safeguard-only batch as `SucceededWithIssues`, and the `azure-devops/jobs/refresh-config-and-docs.yaml` jobs template, which a consumer pins by release tag and commit
+- added the `agents`, `claude` and `copilot` instruction-file settings to the config-and-docs refresh, defaulted per provider (Copilot files off on Azure DevOps) and overridable from the configuration or a `refresh-docs run` flag; the layout pass removes the files of a disabled kind before the audit, and the prompt, now a template embedded in the binary, drops their rules
+
+### Changed
+
+- changed the config-and-docs refresh to leave disabled and empty repositories out as well as forks and archived ones, and to refuse a single-repository dispatch of any of them
+- moved the whole config-and-docs refresh (discovery, the per-repository batch, the prompt audit and refresh, the changelog and secret-shape guards, and the pull requests) from the workflow's inline bash and `scripts/audit-and-refresh.sh` into the `refresh-docs` Go CLI, as `refresh-docs discover` and `refresh-docs run`, so GitHub Actions and Azure Pipelines run one implementation; the workflow now only installs the tools and calls it
+
+### Fixed
+
+- fixed the config-and-docs refresh failing a chlog repository without a `.changes/unreleased/` directory as `stage:`, and reading a `git diff` that failed as drift instead of as an error
+- matched Claude's `hit your 5-hour limit` wording as a usage limit, so reaching that cap skips the rest of the batch instead of failing every remaining repository as `claude:`
+- pointed the refresh prompt and the code-review skill at `refresh-docs scope` instead of the Python helper it replaced
+
+### Removed
+
+- removed the refresh's activity gate, together with the `stale_after_days` dispatch input, the `unchanged` summary line and the scope manifest's `has_guidance` field, so every run refreshes the whole fleet
+
+### Security
+
+- scoped the config-and-docs refresh's git credential helper to the provider's host, so a redirect can no longer carry the token to another host, and withheld every hosting token variable, not only `GH_TOKEN`, from Claude Code's environment
+
 ## [0.11.2] - 2026-11-16
 
 ### Changed
