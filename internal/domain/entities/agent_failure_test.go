@@ -33,9 +33,14 @@ func TestClassifyAgentFailure(t *testing.T) {
 
 	t.Run("should recognise a safeguard refusal", func(t *testing.T) {
 		t.Parallel()
+		// The second wording is the current one: it shares no phrase with
+		// the first but "flagged this message for a cybersecurity topic".
 		for _, output := range []string{
 			"API Error: Claude Code's safeguards flagged this request",
+			"API Error: Opus has safety measures that flagged this message for a cybersecurity topic.",
 			`{"error":"cyber-use-case"}`,
+			"See https://support.claude.com/en/articles/14604842-real-time-cyber-safeguards-on-claude",
+			"Apply to the Cyber Verification Program for access.",
 		} {
 			// given / when
 			kind := entities.ClassifyAgentFailure(output)

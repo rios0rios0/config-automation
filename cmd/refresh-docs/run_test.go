@@ -419,26 +419,31 @@ func TestRefreshBatchUsageLimit(t *testing.T) {
 func TestRefreshBatchSafeguard(t *testing.T) {
 	t.Parallel()
 
-	t.Run("should skip a refused repository without failing the batch", func(t *testing.T) {
-		t.Parallel()
-		// given
-		fixture := newRefreshFixture(t)
-		fixture.repository("refused", map[string]string{"README.md": original})
-		remote := fixture.repository("next", map[string]string{"README.md": original})
-		fixture.agent["FAIL_AUDIT_REPO"] = "fixture__refused"
-		fixture.agent["FAIL_AUDIT_MESSAGE"] = "API Error: Claude Code's safeguards flagged this request"
+	for _, message := range []string{
+		"API Error: Claude Code's safeguards flagged this request",
+		"API Error: Opus has safety measures that flagged this message for a cybersecurity topic.",
+	} {
+		t.Run("should skip a refused repository without failing the batch: "+message, func(t *testing.T) {
+			t.Parallel()
+			// given
+			fixture := newRefreshFixture(t)
+			fixture.repository("refused", map[string]string{"README.md": original})
+			remote := fixture.repository("next", map[string]string{"README.md": original})
+			fixture.agent["FAIL_AUDIT_REPO"] = "fixture__refused"
+			fixture.agent["FAIL_AUDIT_MESSAGE"] = message
 
-		// when
-		run := fixture.run(map[string]any{"README.md": "Updated\n"}, "--ci", dialectGitHubActions)
+			// when
+			run := fixture.run(map[string]any{"README.md": "Updated\n"}, "--ci", dialectGitHubActions)
 
-		// then
-		require.Equal(t, 0, run.code, run.stdout+run.stderr)
-		assert.Contains(t, run.stdout, "safeguard_skipped (1): fixture/refused")
-		assert.Contains(t, run.stdout,
-			"::warning::Claude's safeguards refused fixture/refused; it was skipped, not refreshed.")
-		assert.Contains(t, run.stdout, "failed (0):")
-		assert.Equal(t, "Updated", fixture.show(remote, "README.md"))
-	})
+			// then
+			require.Equal(t, 0, run.code, run.stdout+run.stderr)
+			assert.Contains(t, run.stdout, "safeguard_skipped (1): fixture/refused")
+			assert.Contains(t, run.stdout,
+				"::warning::Claude's safeguards refused fixture/refused; it was skipped, not refreshed.")
+			assert.Contains(t, run.stdout, "failed (0):")
+			assert.Equal(t, "Updated", fixture.show(remote, "README.md"))
+		})
+	}
 
 	t.Run("should end a safeguard-only batch with issues on Azure Pipelines", func(t *testing.T) {
 		t.Parallel()
