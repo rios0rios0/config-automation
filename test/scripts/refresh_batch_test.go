@@ -139,7 +139,7 @@ func newBatchFixture(t *testing.T) *batchFixture {
 		"PATH":     bin + separator + os.Getenv(binaryDirectoryVariable) + separator + os.Getenv("PATH"),
 		"GH_TOKEN": "fixture-token-placeholder", "CLAUDE_CODE_OAUTH_TOKEN": "fixture-oauth-placeholder",
 		"CLAUDE_MODEL": "claude-opus-5-5", "MAX_TURNS": "7",
-		"STALE_AFTER_DAYS": "0", "REPO_INPUT": "", "REFRESH_BRANCH": refreshBranch, "REFRESH_WRITES": "{}",
+		"REFRESH_BRANCH": refreshBranch, "REFRESH_WRITES": "{}",
 	}}
 }
 
@@ -163,8 +163,8 @@ func (f *batchFixture) gitWith(directory string, extra map[string]string, argume
 }
 
 // repository commits files, plus an unrelated source file, to a new bare
-// repository the batch will clone. An old one predates the activity gate.
-func (f *batchFixture) repository(name string, files map[string]string, old bool) (string, string) {
+// repository the batch will clone, and returns that bare repository.
+func (f *batchFixture) repository(name string, files map[string]string) string {
 	f.t.Helper()
 	work := filepath.Join(f.root, "source-"+name)
 	f.git(f.root, "init", "--quiet", "-b", "main", work)
@@ -173,18 +173,11 @@ func (f *batchFixture) repository(name string, files map[string]string, old bool
 	files["source.txt"] = "Original implementation\n"
 	writeTree(f.t, work, files)
 	f.git(work, "add", ".")
-	dates := map[string]string{}
-	if old {
-		dates = map[string]string{
-			"GIT_AUTHOR_DATE":    "2020-01-01T00:00:00Z",
-			"GIT_COMMITTER_DATE": "2020-01-01T00:00:00Z",
-		}
-	}
-	f.gitWith(work, dates, "commit", "--quiet", "-m", "Initial fixture")
+	f.git(work, "commit", "--quiet", "-m", "Initial fixture")
 	remote := filepath.Join(f.root, name+".git")
 	f.git(f.root, "clone", "--quiet", "--bare", work, remote)
 	f.repos = append(f.repos, map[string]string{"owner": "fixture", "name": name, "default_branch": "main"})
-	return remote, work
+	return remote
 }
 
 // run executes the workflow's batch step with writes standing in for the
@@ -281,7 +274,7 @@ func TestRefreshBatch(t *testing.T) {
 		fixture := newBatchFixture(t)
 		paths := slices.Concat(fixtures.SupportedRefreshPaths(), slices.DeleteFunc(
 			fixtures.ExcludedRefreshPaths(), func(path string) bool { return path == "CHANGELOG.md" }))
-		remote, _ := fixture.repository("complete", withContent(paths, original), false)
+		remote := fixture.repository("complete", withContent(paths, original))
 		writes := map[string]any{"source.txt": "Unexpected out-of-scope change\n"}
 		for _, path := range fixtures.SupportedRefreshPaths() {
 			if !slices.Contains(fixtures.PairedImports(), path) {
@@ -314,8 +307,8 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("first", map[string]string{"README.md": original}, false)
-		remote, _ := fixture.repository("second", map[string]string{"README.md": original}, false)
+		fixture.repository("first", map[string]string{"README.md": original})
+		remote := fixture.repository("second", map[string]string{"README.md": original})
 
 		// when
 		run := fixture.run(
@@ -334,7 +327,7 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("quiet", compliant(map[string]string{"README.md": original}), false)
+		fixture.repository("quiet", compliant(map[string]string{"README.md": original}))
 
 		// when
 		run := fixture.run(nil, nil)
@@ -349,7 +342,7 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("changelog", compliant(map[string]string{"CHANGELOG.md": original}), false)
+		fixture.repository("changelog", compliant(map[string]string{"CHANGELOG.md": original}))
 
 		// when
 		run := fixture.run(map[string]any{"CHANGELOG.md": "Stray changelog entry\n"}, nil)
@@ -364,7 +357,7 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("whitespace", compliant(map[string]string{"README.md": original}), false)
+		fixture.repository("whitespace", compliant(map[string]string{"README.md": original}))
 
 		// when
 		run := fixture.run(map[string]any{"README.md": "Original   documentation   \n"}, nil)
@@ -379,8 +372,8 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("first", map[string]string{"README.md": original}, false)
-		remote, _ := fixture.repository("second", map[string]string{"README.md": original}, false)
+		fixture.repository("first", map[string]string{"README.md": original})
+		remote := fixture.repository("second", map[string]string{"README.md": original})
 
 		// when
 		run := fixture.run(
@@ -395,46 +388,14 @@ func TestRefreshBatch(t *testing.T) {
 		assert.Equal(t, "Updated", fixture.show(remote, "README.md"))
 	})
 
-	t.Run("should not reactivate a quiet repository with a documentation-only commit", func(t *testing.T) {
+	t.Run("should give a README-only repository initial guidance", func(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		files := withContent(fixtures.SupportedRefreshPaths(), original)
-		for _, path := range fixtures.PairedImports() {
-			files[path] = entities.AgentsImport
-		}
-		remote, work := fixture.repository("quiet", files, true)
-		for _, path := range fixtures.SupportedRefreshPaths() {
-			if !slices.Contains(fixtures.PairedImports(), path) {
-				require.NoError(
-					t,
-					os.WriteFile(filepath.Join(work, filepath.FromSlash(path)), []byte("Recent refresh\n"), 0o600),
-				)
-			}
-		}
-		fixture.git(work, "commit", "--quiet", "-am", "Refreshed documentation")
-		fixture.git(work, "push", "--quiet", remote, "main")
+		remote := fixture.repository("bootstrap", map[string]string{"README.md": original})
 
 		// when
-		run := fixture.run(nil, map[string]string{"STALE_AFTER_DAYS": "8"})
-
-		// then
-		require.Equal(t, 0, run.code, run.stdout+run.stderr)
-		assert.Contains(t, run.stdout, "unchanged (1)")
-		assert.NoFileExists(t, filepath.Join(fixture.root, "claude-calls"))
-	})
-
-	t.Run("should still give a README-only repository initial guidance", func(t *testing.T) {
-		t.Parallel()
-		// given
-		fixture := newBatchFixture(t)
-		remote, _ := fixture.repository("bootstrap", map[string]string{"README.md": original}, true)
-
-		// when
-		run := fixture.run(
-			map[string]any{"AGENTS.md": "New useful guidance\n"},
-			map[string]string{"STALE_AFTER_DAYS": "8"},
-		)
+		run := fixture.run(map[string]any{"AGENTS.md": "New useful guidance\n"}, nil)
 
 		// then
 		require.Equal(t, 0, run.code, run.stdout+run.stderr)
@@ -446,7 +407,7 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		remote, _ := fixture.repository("deletion", compliant(map[string]string{"README.md": original}), false)
+		remote := fixture.repository("deletion", compliant(map[string]string{"README.md": original}))
 
 		// when
 		run := fixture.run(map[string]any{"README.md": nil}, nil)
@@ -456,22 +417,18 @@ func TestRefreshBatch(t *testing.T) {
 		assert.Equal(t, "D\tREADME.md", fixture.git(remote, "diff", "--name-status", "main", refreshBranch))
 	})
 
-	t.Run("should move a legacy CLAUDE.md to AGENTS.md even when the repository is quiet", func(t *testing.T) {
+	t.Run("should move a legacy CLAUDE.md to AGENTS.md when the refresh edits nothing", func(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		remote, _ := fixture.repository(
-			"legacy",
-			map[string]string{"CLAUDE.md": legacyClaude, "README.md": "Read me\n"},
-			true,
-		)
+		remote := fixture.repository("legacy", map[string]string{"CLAUDE.md": legacyClaude, "README.md": "Read me\n"})
 
 		// when
-		run := fixture.run(nil, map[string]string{"STALE_AFTER_DAYS": "8"})
+		run := fixture.run(nil, nil)
 
 		// then
 		require.Equal(t, 0, run.code, run.stdout+run.stderr)
-		assert.Contains(t, run.stdout, "unchanged (0)")
+		assert.Equal(t, "created\n", fixture.record("prs"))
 		assert.Equal(t, "chore(refresh): refreshed configuration and documentation\n"+entities.RenameMessage,
 			fixture.git(remote, "log", "--format=%s", "main.."+refreshBranch))
 		assert.Contains(t, fixture.git(remote, "log", "--follow", "--format=%s", refreshBranch, "--", "AGENTS.md"),
@@ -490,8 +447,8 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("first", map[string]string{"AGENTS.md": "Guidance\n"}, false)
-		remote, _ := fixture.repository("second", map[string]string{"README.md": original}, false)
+		fixture.repository("first", map[string]string{"AGENTS.md": "Guidance\n"})
+		remote := fixture.repository("second", map[string]string{"README.md": original})
 
 		// when
 		run := fixture.run(
@@ -510,7 +467,7 @@ func TestRefreshBatch(t *testing.T) {
 		t.Parallel()
 		// given
 		fixture := newBatchFixture(t)
-		fixture.repository("echo", compliant(map[string]string{"README.md": original}), false)
+		fixture.repository("echo", compliant(map[string]string{"README.md": original}))
 		echoed := "::warning::injected ##[add-mask]value"
 
 		// when
@@ -531,20 +488,23 @@ func TestRefreshBatchUsageLimit(t *testing.T) {
 	t.Parallel()
 
 	// The third is the org spend cap's wording, which neither older phrase
-	// matched (2026-10-26, 2026-11-02). The fourth is an audit result worded
-	// as no phrase covers, where the error code alone has to mark the limit.
+	// matched (2026-10-26, 2026-11-02). The fourth is the 5-hour limit, whose
+	// wording names neither a week nor a month. The fifth is an audit result
+	// worded as no phrase covers, where the error code alone has to mark the
+	// limit.
 	for _, message := range []string{
 		"You have hit your weekly limit",
 		"Claude AI monthly usage limit reached",
 		"You've hit your org's monthly spend limit · ask your admin to raise it",
+		"You've hit your 5-hour limit · resets 9am (UTC)",
 		`{"type":"result","is_error":true,"api_error":"usage_limit_reached","result":"reworded"}`,
 	} {
 		t.Run("should skip the rest of the batch when Claude reports: "+message, func(t *testing.T) {
 			t.Parallel()
 			// given
 			fixture := newBatchFixture(t)
-			fixture.repository("first", map[string]string{"README.md": original}, false)
-			fixture.repository("second", map[string]string{"README.md": original}, false)
+			fixture.repository("first", map[string]string{"README.md": original})
+			fixture.repository("second", map[string]string{"README.md": original})
 
 			// when
 			run := fixture.run(nil, map[string]string{

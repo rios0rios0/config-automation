@@ -66,8 +66,8 @@ Constants in `internal/domain/entities/compliance_policy.go` and the policy carv
 
 The refresh scope is defined by `refresh-docs scope` (`DiscoverRefreshScopeCommand`,
 with its path rules in `internal/domain/entities/refresh_scope.go`). Its per-repository
-manifest drives exact edit grants, the prompt inventory, drift detection, staging,
-and the activity gate. Extend discovery and its tests together when adding a file
+manifest drives exact edit grants, the prompt inventory, drift detection, and
+staging. Extend discovery and its tests together when adding a file
 category, and update `scripts/refresh_config_and_docs_prompt.md` with the relevant
 editing rules. Preserve frontmatter, model/tool configuration, and generated content.
 `refresh-docs layout` (`NormalizeAgentsLayoutCommand`) runs before discovery and keeps
@@ -83,8 +83,8 @@ go test -count=1 ./cmd/refresh-docs/... ./internal/... ./test/scripts/...
 These tests execute the batch shell against local Git repositories with Claude
 and GitHub CLI doubles. They cover every supported category reaching a single PR,
 the `AGENTS.md` migration and its separate rename commit, no-op runs, tracked
-deletions, failures that must not abort the batch, and the activity gate excluding
-refresh output without skipping initial guidance or a pending migration.
+deletions, failures that must not abort the batch, and every usage-limit wording
+that short-circuits a batch.
 
 GitHub Actions workflows can only be fully exercised by running them. For the config-and-docs refresh, trigger a single-repo dispatch against a low-risk target after merge:
 

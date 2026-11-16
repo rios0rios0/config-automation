@@ -84,7 +84,6 @@ func (c *DiscoverRefreshScopeCommand) discover(ctx context.Context, root string)
 		Existing:     sortedPaths(existing),
 		Creatable:    sortedPaths(creatable),
 		Managed:      sortedPaths(managed),
-		HasGuidance:  hasAgentGuidance(existing),
 		AllowedTools: tools,
 		Skipped:      sortedPaths(skipped),
 	}, nil
@@ -180,17 +179,6 @@ func (c *DiscoverRefreshScopeCommand) creatableDocuments(
 		}
 	}
 	return creatable, nil
-}
-
-// hasAgentGuidance reports whether existing holds agent guidance beyond the
-// documents written for people.
-func hasAgentGuidance(existing map[string]bool) bool {
-	for document := range existing {
-		if !entities.IsHumanDocument(document) {
-			return true
-		}
-	}
-	return false
 }
 
 // union returns the members of both sets.

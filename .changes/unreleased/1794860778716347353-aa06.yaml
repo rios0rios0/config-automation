@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'matched Claude''s `hit your 5-hour limit` wording as a usage limit, so reaching that cap skips the rest of the batch instead of failing every remaining repository as `claude:`'
+time: '2026-11-16T20:26:18.716307886Z'

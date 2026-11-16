@@ -54,7 +54,6 @@ func TestRun(t *testing.T) {
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &scope))
 		assert.Equal(t, []string{"AGENTS.md"}, scope.Existing)
 		assert.Equal(t, []string{"CLAUDE.md"}, scope.Managed)
-		assert.True(t, scope.HasGuidance)
 	})
 
 	t.Run("should fail when the directory is not a repository", func(t *testing.T) {

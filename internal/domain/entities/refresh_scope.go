@@ -42,7 +42,6 @@ type RefreshScope struct {
 	Existing     []string
 	Creatable    []string
 	Managed      []string
-	HasGuidance  bool
 	AllowedTools []string
 	Skipped      []string
 }
@@ -122,12 +121,6 @@ func IsAgentsImport(text string) bool {
 func HasSafePathCharacters(path string) bool {
 	isControl := func(char rune) bool { return char < firstPrintableCharacter }
 	return !strings.ContainsFunc(path, isControl) && !strings.ContainsAny(path, unsafePathCharacters)
-}
-
-// IsHumanDocument reports whether path is written for people rather than
-// agents, so that alone it does not count as existing guidance.
-func IsHumanDocument(path string) bool {
-	return slices.Contains(humanDocuments(), path)
 }
 
 // isExcludedDirectory reports whether a directory holds dependencies, a

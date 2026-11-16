@@ -1,4 +1,4 @@
-Review the allowed configuration and documentation files against the actual code and the supplied prompt-audit findings. Update them only for meaningful factual drift or verified outdated prompting patterns. The host discovers exact paths with `scripts/refresh_scope.py` and appends them under `## Allowed files for this repository`; that manifest defines your edit scope.
+Review the allowed configuration and documentation files against the actual code and the supplied prompt-audit findings. Update them only for meaningful factual drift or verified outdated prompting patterns. The host discovers exact paths with `refresh-docs scope` and appends them under `## Allowed files for this repository`; that manifest defines your edit scope.
 
 `AGENTS.md` is the instruction file every coding agent shares. Each `CLAUDE.md` beside one contains only the import line `@AGENTS.md`, which is how Claude Code loads it. The host keeps those one-line files and moves a legacy `CLAUDE.md` into `AGENTS.md` before you run; `## Guidance layout for this repository` below lists what it changed.
 

@@ -141,12 +141,9 @@ keeps. The check that rejects credential-shaped text in the refresh's diff, the
 changelog entry included, matches the shapes of both tokens: a fine-grained GitHub
 token and an Anthropic token.
 
-A README alone does not count as existing assistant guidance, so it cannot suppress
-a repository's initial guidance refresh.
-
-`max_turns` applies separately to each phase (default 50 each). The existing
-activity gate still skips quiet repositories; a single-repository dispatch bypasses
-it, or use `-f stale_after_days=0` for a full-fleet audit after a model or prompt change.
+`max_turns` applies separately to each phase (default 50 each). Every run refreshes
+the whole fleet: no repository is skipped for having been quiet since the last run,
+so a model or prompt change reaches every repository at the next schedule.
 
 ### `AGENTS.md` layout
 
@@ -169,9 +166,8 @@ files the PR proposes:
 `.claude/CLAUDE.md` and dependency/build directories are left alone. The workflow
 owns the one-line `CLAUDE.md` files: they are staged and drift-checked but never
 granted to Claude. After the refresh, the same script adds the import for an
-`AGENTS.md` Claude created. A layout change alone opens the PR, Claude records it in
-the repository's changelog, and the activity gate never skips a repository whose
-layout it just changed.
+`AGENTS.md` Claude created. A layout change alone opens the PR, and Claude records it
+in the repository's changelog.
 
 ## Usage
 
