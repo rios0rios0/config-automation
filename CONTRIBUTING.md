@@ -26,7 +26,7 @@ development practices, refer to the **[Development Guide](https://github.com/rio
    make lint
    make test
    make sast
-   go test -count=1 ./test/scripts/...
+   go test -count=1 ./cmd/refresh-docs/... ./test/scripts/...
    ```
 5. If your change touches `cmd/harden-repos/`, also run a single-repo audit against a safe target:
    ```bash
@@ -52,7 +52,7 @@ go test -run TestAuditRepositoriesCommand ./internal/domain/commands/
 
 Test data builders live under `test/domain/builders/`; in-memory doubles live under `test/domain/doubles/repositories/`.
 
-`test/scripts/`, which runs the refresh's shell against local repositories, sits outside the directories `make test` covers; run it with `go test -count=1 ./test/scripts/...`, since Go's test cache does not see the binary and scripts it runs in child processes.
+`test/scripts/`, which runs the release reconciliation's shell against local repositories, sits outside the directories `make test` covers; run it with `go test -count=1 ./test/scripts/...`. The refresh's end-to-end suite in `cmd/refresh-docs/` runs real git and a fake Claude CLI in child processes, which Go's test cache does not see either, so run it with `-count=1` too.
 
 ## Hardening Policy Changes
 
@@ -68,11 +68,14 @@ The refresh scope is defined by `refresh-docs scope` (`DiscoverRefreshScopeComma
 with its path rules in `internal/domain/entities/refresh_scope.go`). Its per-repository
 manifest drives exact edit grants, the prompt inventory, drift detection, and
 staging. Extend discovery and its tests together when adding a file
-category, and update `scripts/refresh_config_and_docs_prompt.md` with the relevant
-editing rules. Preserve frontmatter, model/tool configuration, and generated content.
-`refresh-docs layout` (`NormalizeAgentsLayoutCommand`) runs before discovery and keeps
-`AGENTS.md` as the instruction file with a one-line `CLAUDE.md` importing it; change
-it together with its tests in `internal/domain/commands/`.
+category, and update the prompt template
+`internal/domain/entities/prompts/refresh_config_and_docs.md` with the relevant
+editing rules; a rule that depends on an instruction-file setting goes inside its
+`{{if .Claude}}` or `{{if .Copilot}}` block. Preserve frontmatter, model/tool
+configuration, and generated content. `refresh-docs layout`
+(`NormalizeAgentsLayoutCommand`) runs before discovery and keeps `AGENTS.md` as the
+instruction file with a one-line `CLAUDE.md` importing it, and removes the files of a
+disabled kind; change it together with its tests in `internal/domain/commands/`.
 
 Run the offline tests before a workflow change:
 
@@ -80,11 +83,16 @@ Run the offline tests before a workflow change:
 go test -count=1 ./cmd/refresh-docs/... ./internal/... ./test/scripts/...
 ```
 
-These tests execute the batch shell against local Git repositories with Claude
-and GitHub CLI doubles. They cover every supported category reaching a single PR,
-the `AGENTS.md` migration and its separate rename commit, no-op runs, tracked
-deletions, failures that must not abort the batch, and every usage-limit wording
-that short-circuits a batch.
+The `cmd/refresh-docs/` suite runs `refresh-docs run` against local bare Git
+repositories with a fake Claude CLI and an in-memory pull-request host, on both
+providers and in each CI dialect. It covers every supported category reaching a
+single PR, the `AGENTS.md` migration and its separate rename commit, the
+instruction-file removals, no-op runs, tracked deletions, the changelog and
+secret-shape guards, failures that must not abort the batch, and every usage-limit
+wording that short-circuits a batch.
+
+A change to `azure-devops/` can only be exercised from an Azure DevOps pipeline that
+consumes it, so run one there with its `repo` parameter set before tagging a release.
 
 GitHub Actions workflows can only be fully exercised by running them. For the config-and-docs refresh, trigger a single-repo dispatch against a low-risk target after merge:
 

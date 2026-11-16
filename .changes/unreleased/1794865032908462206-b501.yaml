@@ -1,0 +1,3 @@
+kind: 'Added'
+body: 'added Azure DevOps support to the config-and-docs refresh: `azuredevops` organizations in the configuration file, discovery and pull requests through gitforge, percent-encoded clone and pull-request URLs, an Azure Pipelines presenter that defuses logging commands in repository-controlled output and ends a safeguard-only batch as `SucceededWithIssues`, and the `azure-devops/jobs/refresh-config-and-docs.yaml` jobs template, which a consumer pins by release tag and commit'
+time: '2026-11-16T21:37:12.908411043Z'

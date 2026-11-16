@@ -19,6 +19,14 @@ func NewGithubClient(options ...github.ClientOptionsFunc) (*github.Client, error
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
+	return NewGithubClientWithToken(token, options...)
+}
+
+// NewGithubClientWithToken builds a go-github client for one explicit token.
+// A fine-grained token reaches one resource owner only, so each owner of a
+// multi-owner run gets its own client rather than one read from the
+// environment.
+func NewGithubClientWithToken(token string, options ...github.ClientOptionsFunc) (*github.Client, error) {
 	// go-github refuses an empty token, so the anonymous client is the one
 	// built without the option rather than with an empty one.
 	var all []github.ClientOptionsFunc

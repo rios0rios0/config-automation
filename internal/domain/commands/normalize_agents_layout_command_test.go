@@ -23,7 +23,7 @@ func normalizeLayout(
 	var failure error
 	commands.NewNormalizeAgentsLayoutCommand(tree).Execute(
 		t.Context(),
-		commands.NormalizeAgentsLayoutInput{Root: "/repository"},
+		commands.NormalizeAgentsLayoutInput{Root: "/repository", InstructionFiles: githubFiles()},
 		commands.NormalizeAgentsLayoutListeners{
 			OnSuccess: func(result entities.AgentsLayoutReport) { report = result },
 			OnError:   func(err error) { failure = err },

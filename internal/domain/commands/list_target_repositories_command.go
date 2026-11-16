@@ -37,21 +37,9 @@ func (c ListTargetRepositoriesCommand) Execute(
 	input ListTargetRepositoriesInput,
 	listeners ListTargetRepositoriesListeners,
 ) {
-	authenticated, err := c.reposRepo.FindAuthenticatedLogin(ctx)
+	all, err := FindOwnedRepositories(ctx, c.reposRepo, input.Owner)
 	if err != nil {
-		listeners.OnError(fmt.Errorf("finding authenticated login: %w", err))
-		return
-	}
-
-	kind, err := c.reposRepo.FindOwnerKind(ctx, input.Owner)
-	if err != nil {
-		listeners.OnError(fmt.Errorf("finding owner kind for %s: %w", input.Owner, err))
-		return
-	}
-
-	all, err := c.reposRepo.FindAllByOwner(ctx, input.Owner, authenticated == input.Owner, kind)
-	if err != nil {
-		listeners.OnError(fmt.Errorf("listing repos: %w", err))
+		listeners.OnError(err)
 		return
 	}
 
@@ -64,4 +52,29 @@ func (c ListTargetRepositoriesCommand) Execute(
 	}
 
 	listeners.OnSuccess(filtered)
+}
+
+// FindOwnedRepositories lists every repository of a GitHub owner through the
+// endpoint that keeps them all visible: the authenticated user's own listing
+// when the owner is that user, so private repositories stay in, and otherwise
+// the organization's or the user's. Each lookup failing is an error, never a
+// quietly shorter list.
+func FindOwnedRepositories(
+	ctx context.Context,
+	reposRepo repositories.Repository,
+	owner string,
+) ([]entities.Repository, error) {
+	authenticated, err := reposRepo.FindAuthenticatedLogin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("finding authenticated login: %w", err)
+	}
+	kind, err := reposRepo.FindOwnerKind(ctx, owner)
+	if err != nil {
+		return nil, fmt.Errorf("finding owner kind for %s: %w", owner, err)
+	}
+	all, err := reposRepo.FindAllByOwner(ctx, owner, authenticated == owner, kind)
+	if err != nil {
+		return nil, fmt.Errorf("listing repos: %w", err)
+	}
+	return all, nil
 }

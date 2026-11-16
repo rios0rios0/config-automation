@@ -9,6 +9,7 @@ type Repository struct {
 	Private       bool
 	Fork          bool
 	Archived      bool
+	Disabled      bool
 	DefaultBranch string
 	Settings      RepositorySettings
 }

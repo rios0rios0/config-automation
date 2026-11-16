@@ -1,0 +1,3 @@
+kind: 'Fixed'
+body: 'fixed the config-and-docs refresh failing a chlog repository without a `.changes/unreleased/` directory as `stage:`, and reading a `git diff` that failed as drift instead of as an error'
+time: '2026-11-16T21:37:12.917597005Z'

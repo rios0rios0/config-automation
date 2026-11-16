@@ -1,0 +1,40 @@
+# Checks out the consumer and this repository side by side, refuses a checkout
+# of this repository at any commit other than the one the consumer pinned, and
+# installs the Go toolchain its `go.mod` asks for. Both repositories are called
+# config-automation in a typical setup, so each gets an explicit path.
+parameters:
+  - name: 'toolRepository'
+    type: 'string'
+  - name: 'expectedSha'
+    type: 'string'
+
+steps:
+  - checkout: 'self'
+    path: 'consumer'
+    displayName: 'Checkout the consumer (for its configuration)'
+
+  - checkout: '${{ parameters.toolRepository }}'
+    path: 'tool'
+    displayName: 'Checkout config-automation'
+
+  # A tag can be moved, so the pinned release is trusted only at the commit the
+  # consumer recorded for it. The consumer checks the same commit in a stage of
+  # its own before this one starts; this repeats it after every checkout.
+  - bash: |
+      set -euo pipefail
+      actual="$(git -C "$(Pipeline.Workspace)/tool" rev-parse HEAD)"
+      if [ "${actual}" != "${EXPECTED_SHA}" ]; then
+        echo "##vso[task.logissue type=error]config-automation is at ${actual}, not at the pinned ${EXPECTED_SHA}."
+        exit 1
+      fi
+      echo "config-automation is at the pinned ${actual}."
+      version="$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' "$(Pipeline.Workspace)/tool/go.mod")"
+      echo "##vso[task.setvariable variable=refreshGoVersion]${version}"
+    env:
+      EXPECTED_SHA: '${{ parameters.expectedSha }}'
+    displayName: 'Verify the pinned commit'
+
+  - task: 'GoTool@0'
+    inputs:
+      version: '$(refreshGoVersion)'
+    displayName: 'Install Go'

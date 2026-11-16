@@ -163,6 +163,7 @@ func mapRepoListingToEntity(repo *github.Repository) entities.Repository {
 		Private:       boolOrFalse(repo.Private),
 		Fork:          boolOrFalse(repo.Fork),
 		Archived:      boolOrFalse(repo.Archived),
+		Disabled:      boolOrFalse(repo.Disabled),
 		DefaultBranch: stringOrEmpty(repo.DefaultBranch),
 	}
 }

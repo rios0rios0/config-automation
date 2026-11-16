@@ -1,0 +1,3 @@
+kind: 'Security'
+body: 'scoped the config-and-docs refresh''s git credential helper to the provider''s host, so a redirect can no longer carry the token to another host, and withheld every hosting token variable, not only `GH_TOKEN`, from Claude Code''s environment'
+time: '2026-11-16T21:37:12.914200354Z'

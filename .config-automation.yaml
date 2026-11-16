@@ -1,0 +1,24 @@
+# The organizations the weekly config-and-docs refresh walks, read by
+# `refresh-docs discover` and `refresh-docs run`. A fine-grained PAT reaches
+# one resource owner only, so each owner has its own token; `credential`
+# names the secret that holds it, which discovery passes to each matrix leg.
+providers:
+  - type: 'github'
+    token: '${PERSONAL_ACCESS_TOKEN}'
+    organizations: ['rios0rios0']
+    credential: 'PERSONAL_ACCESS_TOKEN'
+  - type: 'github'
+    token: '${MEDHUB_ACCESS_TOKEN}'
+    organizations: ['medhub-life']
+    credential: 'MEDHUB_ACCESS_TOKEN'
+  - type: 'github'
+    token: '${PREFY_ACCESS_TOKEN}'
+    organizations: ['prefy']
+    credential: 'PREFY_ACCESS_TOKEN'
+
+refresh:
+  git:
+    user_name: 'config-bot'
+    user_email: 'config-bot@users.noreply.github.com'
+  pull_request:
+    source: 'Automated weekly refresh by `config-and-docs-refresh.yaml` in `rios0rios0/config-automation`.'

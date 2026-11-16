@@ -48,6 +48,9 @@ const (
 	OutcomeDangling LayoutOutcome = "dangling"
 	// OutcomeSkipped means the pair was left alone for a human to review.
 	OutcomeSkipped LayoutOutcome = "skipped"
+	// OutcomeRemoved means the host removed an instruction file of a kind the
+	// repository does not keep.
+	OutcomeRemoved LayoutOutcome = "removed"
 )
 
 // PairSide classifies one file of an AGENTS.md and CLAUDE.md pair.
@@ -83,7 +86,8 @@ type LayoutPair struct {
 }
 
 // AgentsLayoutReport records what the layout pass did to one repository.
-// The CLI maps it to the JSON the refresh workflows read with jq.
+// NoImports marks a repository that keeps no CLAUDE.md, which changes how a
+// rename and a merge are described.
 type AgentsLayoutReport struct {
 	Renamed    []string
 	Merged     []string
@@ -91,7 +95,9 @@ type AgentsLayoutReport struct {
 	Rebannered []string
 	Dangling   []string
 	Skipped    []string
+	Removed    []string
 	Changed    bool
+	NoImports  bool
 	Note       string
 }
 
@@ -108,7 +114,7 @@ type layoutSection struct {
 func NewAgentsLayoutReport() AgentsLayoutReport {
 	return AgentsLayoutReport{
 		Renamed: []string{}, Merged: []string{}, Pointed: []string{},
-		Rebannered: []string{}, Dangling: []string{}, Skipped: []string{},
+		Rebannered: []string{}, Dangling: []string{}, Skipped: []string{}, Removed: []string{},
 	}
 }
 
@@ -129,7 +135,8 @@ func DescribeAgentsLayout(report AgentsLayoutReport) string {
 		for _, path := range *section.paths {
 			lines = append(
 				lines,
-				strings.NewReplacer("{path}", path, "{heading}", MigratedHeading).Replace(section.template),
+				strings.NewReplacer("{path}", path, "{heading}", MigratedHeading, "{reason}", removalReason(path)).
+					Replace(section.template),
 			)
 		}
 	}
@@ -141,18 +148,35 @@ func DescribeAgentsLayout(report AgentsLayoutReport) string {
 
 // sections lists the report's outcomes in reporting order.
 func (r *AgentsLayoutReport) sections() []layoutSection {
+	renamed := "- Renamed `{path}` to `AGENTS.md` beside it in a separate commit, " +
+		"so history follows the file, and recreated it as the import line."
+	merged := "- Appended the former `{path}` text to the `AGENTS.md` beside it " +
+		"under `{heading}`, then reduced `{path}` to the import line."
+	if r.NoImports {
+		renamed = "- Renamed `{path}` to `AGENTS.md` beside it in a separate commit, " +
+			"so history follows the file; this repository keeps no `CLAUDE.md`."
+		merged = "- Appended the former `{path}` text to the `AGENTS.md` beside it " +
+			"under `{heading}`, then removed `{path}`."
+	}
 	return []layoutSection{
-		{OutcomeRenamed, &r.Renamed, "- Renamed `{path}` to `AGENTS.md` beside it in a separate commit, " +
-			"so history follows the file, and recreated it as the import line."},
-		{OutcomeMerged, &r.Merged, "- Appended the former `{path}` text to the `AGENTS.md` beside it " +
-			"under `{heading}`, then reduced `{path}` to the import line."},
+		{OutcomeRenamed, &r.Renamed, renamed},
+		{OutcomeMerged, &r.Merged, merged},
 		{OutcomePointed, &r.Pointed, "- Added `{path}` importing the existing `AGENTS.md` beside it."},
 		{OutcomeRebannered, &r.Rebannered, "- Replaced the legacy `# CLAUDE.md` banner of `{path}`."},
 		{OutcomeDangling, &r.Dangling, "- `{path}` imports an `AGENTS.md` that does not exist; " +
 			"create it if that directory needs guidance."},
 		{OutcomeSkipped, &r.Skipped, "- Left `{path}` and its `AGENTS.md` unchanged (a symlink to another " +
 			"file, an ignored path, or not UTF-8 text); report it for human review."},
+		{OutcomeRemoved, &r.Removed, "- Removed `{path}`{reason}."},
 	}
+}
+
+// removalReason says why the host removed an instruction file.
+func removalReason(path string) string {
+	if strings.HasSuffix("/"+path, "/"+ClaudeFile) {
+		return ", since this repository keeps its guidance in `AGENTS.md` alone"
+	}
+	return ", since this repository keeps no GitHub Copilot files"
 }
 
 // WithoutAgentsImports drops the lines that import AGENTS.md, except inside
