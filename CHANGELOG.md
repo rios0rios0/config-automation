@@ -22,6 +22,12 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-11-16
+
+### Fixed
+
+- matched the current wording of Claude's cybersecurity safeguard refusal ("has safety measures that flagged this message for a cybersecurity topic", with a `real-time-cyber-safeguards` link), so a refused repository is reported as `safeguard_skipped` instead of failing its leg as `claude:` every week
+
 ## [0.12.1] - 2026-11-16
 
 ### Fixed

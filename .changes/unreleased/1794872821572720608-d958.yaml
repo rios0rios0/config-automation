@@ -1,3 +1,0 @@
-kind: 'Fixed'
-body: 'matched the current wording of Claude''s cybersecurity safeguard refusal ("has safety measures that flagged this message for a cybersecurity topic", with a `real-time-cyber-safeguards` link), so a refused repository is reported as `safeguard_skipped` instead of failing its leg as `claude:` every week'
-time: '2026-11-16T23:47:01.572637321Z'
