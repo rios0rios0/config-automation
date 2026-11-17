@@ -42,8 +42,8 @@ github.com/pjbgf/sha1cd v0.7.0/go.mod h1:pKR5Li+qTCo+ebqITZfwPlJGoCFCvSO00qxjbNt
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/rios0rios0/gitforge/v4 v4.3.5-0.20261116203928-60355034a179 h1:mYJK/zKxFsEFKgw4pSILyrjsexzsT601wMcNRnezEdc=
-github.com/rios0rios0/gitforge/v4 v4.3.5-0.20261116203928-60355034a179/go.mod h1:ophsOkqRwTsAE+VVqJ/aWsPBCfUR/YZfua4tTbvR19U=
+github.com/rios0rios0/gitforge/v4 v4.4.0 h1:FFS+N51n0/SzWiBHTkUHiR8rs0Cdp+HiopENMAepMzo=
+github.com/rios0rios0/gitforge/v4 v4.4.0/go.mod h1:ophsOkqRwTsAE+VVqJ/aWsPBCfUR/YZfua4tTbvR19U=
 github.com/rios0rios0/testkit v0.3.8 h1:g6v2MrKLJy+qARR6sdh2VflDKUSEwPA4KHIkMpPmEMY=
 github.com/rios0rios0/testkit v0.3.8/go.mod h1:++sYYhLAHSZZN27+SrXkEPXDU2ZxkUGSTMZTOd3JSYU=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
