@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/google/go-github/v93 v93.0.0
-	github.com/rios0rios0/gitforge/v4 v4.4.0
+	github.com/rios0rios0/gitforge/v4 v4.6.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v3 v3.0.6
@@ -25,7 +25,7 @@ require (
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.1.0 // indirect
 	golang.org/x/mod v0.43.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
