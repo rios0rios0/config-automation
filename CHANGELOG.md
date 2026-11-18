@@ -22,6 +22,13 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-11-18
+
+### Changed
+
+- changed the Go module `github.com/sergi/go-diff` from `v1.4.0` to `v1.4.5`
+- updated gitforge from the unreleased commit the Go refresh was built against to its `v4.4.0` release, which carries the same code
+
 ## [0.12.2] - 2026-11-16
 
 ### Fixed
