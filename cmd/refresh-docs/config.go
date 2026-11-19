@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	forgeconfig "github.com/rios0rios0/gitforge/v4/pkg/config/domain/entities"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/rios0rios0/config-automation/internal/domain/entities"
 )
