@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/google/go-github/v93 v93.0.0
-	github.com/rios0rios0/gitforge/v4 v4.7.1
+	github.com/rios0rios0/gitforge/v4 v4.9.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0
