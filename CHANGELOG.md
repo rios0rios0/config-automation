@@ -22,6 +22,13 @@ Exceptions are acceptable depending on the circumstances (critical bug fixes tha
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-11-25
+
+### Changed
+
+- changed the Go modules `github.com/rios0rios0/gitforge/v4` from `v4.4.0` to `v4.9.0` and `golang.org/x/net` from `v0.62.0` to `v0.63.0`
+- changed the imports and the module requirement of `go.yaml.in/yaml/v3` to `go.yaml.in/yaml/v4`
+
 ## [0.12.3] - 2026-11-18
 
 ### Changed
