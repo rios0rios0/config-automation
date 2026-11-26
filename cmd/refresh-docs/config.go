@@ -183,8 +183,9 @@ func (c configuration) pullRequestTitle() string {
 }
 
 // pullRequestBody returns the pull request's description for the
-// instruction files the refresh keeps.
-func (c configuration) pullRequestBody(files entities.InstructionFiles) string {
+// instruction files the refresh keeps and whether it keeps the shared ignore
+// rules in `.gitignore`.
+func (c configuration) pullRequestBody(files entities.InstructionFiles, ignoreRules bool) string {
 	layout := "`AGENTS.md` is the instruction file and every `CLAUDE.md` holds only the `@AGENTS.md` " +
 		"import. The automation moves a legacy `CLAUDE.md` into that layout before Claude Code runs, " +
 		"committing a rename on its own so history follows the file."
@@ -196,6 +197,11 @@ func (c configuration) pullRequestBody(files entities.InstructionFiles) string {
 	if !files.Copilot {
 		layout += " It also removes GitHub Copilot's instructions and code-review skill, which this " +
 			"repository does not keep."
+	}
+	if ignoreRules {
+		layout += " It also writes the shared ignore rules of `rios0rios0/pipelines` into `.gitignore`, " +
+			"as `make gitignore` does: their delimited block is regenerated, and every line outside it " +
+			"is left alone."
 	}
 	return valueOr(c.Refresh.PullRequest.Source, defaultSource) + "\n\n" + layout + "\n\n" +
 		"Claude Code ran a read-only prompt audit, then reviewed `AGENTS.md`, the other discovered " +

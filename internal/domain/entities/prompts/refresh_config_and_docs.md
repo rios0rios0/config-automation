@@ -21,6 +21,10 @@ The supported categories are:
 - Root `README.md` and `CONTRIBUTING.md`, plus `.github/CONTRIBUTING.md`, `.azuredevops/CONTRIBUTING.md`, and `docs/CONTRIBUTING.md` when present.
 
 Existing files in these categories are eligible. The only files you may create are the ones the manifest lists under "Files that may be created when useful", and only when the repository clearly benefits from them{{if .Claude}}; the host adds the import for an `AGENTS.md` you create{{end}}. Do not create other files or relocate existing instructions. Dependency/build/generated directories and symlinks are excluded. Files listed as skipped or absent from the manifest remain report-only.
+{{- if .IgnoreRules}}
+
+The host also writes the shared ignore rules of `rios0rios0/pipelines` into the root `.gitignore` before you run, as `make gitignore` does; `## Shared ignore rules for this repository` below says what it changed. `.gitignore` is the host's: you hold no grant for it, so never edit it.
+{{- end}}
 
 ## Your task
 
@@ -155,7 +159,7 @@ Codex, Cursor, GitHub Copilot, and other agents read `AGENTS.md` directly{{if .C
 
 ## Recording the change
 
-Record the refresh **if and only if you modified an allowed documentation or instruction file, or the guidance layout section lists host changes.** A host change to the instruction files is part of this refresh: record it even if you edit nothing else, for example as {{if .Claude}}`moved the agent instructions from \`CLAUDE.md\` to \`AGENTS.md\`, keeping a \`CLAUDE.md\` that imports it`{{else}}`moved the agent instructions from \`CLAUDE.md\` to \`AGENTS.md\` and removed \`CLAUDE.md\``{{end}}{{if not .Copilot}} or `removed the GitHub Copilot instructions and code-review skill, which this repository no longer keeps`{{end}}. How you record it depends on which changelog convention the repository follows — the two are mutually exclusive, and the host automation tells you which one applies in the `## Changelog convention for this repository` section appended below this prompt. It also grants you only the tool the applicable convention needs, so the wrong one is not merely discouraged, it is impossible.
+Record the refresh **if and only if you modified an allowed documentation or instruction file, or the guidance layout section lists host changes{{if .IgnoreRules}}, or the shared ignore rules section says the host changed `.gitignore`{{end}}.** A host change to the instruction files{{if .IgnoreRules}} or to `.gitignore`{{end}} is part of this refresh: record it even if you edit nothing else, for example as {{if .Claude}}`moved the agent instructions from \`CLAUDE.md\` to \`AGENTS.md\`, keeping a \`CLAUDE.md\` that imports it`{{else}}`moved the agent instructions from \`CLAUDE.md\` to \`AGENTS.md\` and removed \`CLAUDE.md\``{{end}}{{if not .Copilot}} or `removed the GitHub Copilot instructions and code-review skill, which this repository no longer keeps`{{end}}. How you record it depends on which changelog convention the repository follows — the two are mutually exclusive, and the host automation tells you which one applies in the `## Changelog convention for this repository` section appended below this prompt. It also grants you only the tool the applicable convention needs, so the wrong one is not merely discouraged, it is impossible.
 
 ### If the repository uses chlog
 
@@ -180,7 +184,7 @@ Add a short entry to `CHANGELOG.md` under the `[Unreleased]` section. Use `### C
 ## Commit discipline
 
 - If and only if you modify a file in the supplied manifest, the host automation will detect the diff and open a PR. You do not need to run git commands yourself.
-- If all allowed files are accurate, have no verified audit findings (or should not be created), and the host lists no layout changes, do nothing. Weekly no-op runs are expected and correct. A changelog fragment or `CHANGELOG.md` entry on its own never opens a PR, so never write one for a refresh that did not happen.
+- If all allowed files are accurate, have no verified audit findings (or should not be created), and the host lists no layout changes{{if .IgnoreRules}} and no change to `.gitignore`{{end}}, do nothing. Weekly no-op runs are expected and correct. A changelog fragment or `CHANGELOG.md` entry on its own never opens a PR, so never write one for a refresh that did not happen.
 - Edit only files in the supplied manifest and — in a repository without chlog — `CHANGELOG.md`; in a chlog repository the only changelog action is running `chlog new`. Never run destructive commands. Never push, tag, or merge.
 
 ## Tone

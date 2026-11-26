@@ -76,6 +76,10 @@ configuration, and generated content. `refresh-docs layout`
 (`NormalizeAgentsLayoutCommand`) runs before discovery and keeps `AGENTS.md` as the
 instruction file with a one-line `CLAUDE.md` importing it, and removes the files of a
 disabled kind; change it together with its tests in `internal/domain/commands/`.
+`SyncIgnoreRulesCommand` runs the `make gitignore` generator of `rios0rios0/pipelines`
+on each clone through `PipelinesIgnoreRulesRepository`. The fragments, and which of them
+a repository gets, belong to that generator: change them in `pipelines`, never here, so
+the refresh and a developer's `make gitignore` keep writing the same block.
 
 Run the offline tests before a workflow change:
 
@@ -87,9 +91,9 @@ The `cmd/refresh-docs/` suite runs `refresh-docs run` against local bare Git
 repositories with a fake Claude CLI and an in-memory pull-request host, on both
 providers and in each CI dialect. It covers every supported category reaching a
 single PR, the `AGENTS.md` migration and its separate rename commit, the
-instruction-file removals, no-op runs, tracked deletions, the changelog and
-secret-shape guards, failures that must not abort the batch, and every usage-limit
-wording that short-circuits a batch.
+instruction-file removals, the shared ignore rules (with a fake generator), no-op
+runs, tracked deletions, the changelog and secret-shape guards, failures that must
+not abort the batch, and every usage-limit wording that short-circuits a batch.
 
 A change to `azure-devops/` can only be exercised from an Azure DevOps pipeline that
 consumes it, so run one there with its `repo` parameter set before tagging a release.

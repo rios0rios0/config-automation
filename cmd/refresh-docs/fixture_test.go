@@ -94,6 +94,8 @@ type refreshFixture struct {
 	agent        map[string]string
 	variables    map[string]string
 	extraConfig  string
+	// pipelinesDir, when set, is the fake pipelines checkout the run gets.
+	pipelinesDir string
 	// agentDouble, when set, replaces the fake Claude CLI.
 	agentDouble repositories.AgentRepository
 }
@@ -209,12 +211,18 @@ func (f *refreshFixture) wiring() dependencies {
 	if f.agentDouble != nil {
 		factory = func(io.Writer, []string) repositories.AgentRepository { return f.agentDouble }
 	}
+	// The generator starts from this process's environment, with the tokens a
+	// leg holds planted in it, so a test can tell they never reach it.
+	generator := func() []string {
+		return append(os.Environ(), "GH_TOKEN="+fixtureToken, "CLAUDE_CODE_OAUTH_TOKEN="+fixtureOAuthToken)
+	}
 	return dependencies{
-		hosting: providers,
-		clones:  f.clones,
-		agent:   factory,
-		getenv:  func(name string) string { return f.variables[name] },
-		now:     time.Now,
+		hosting:     providers,
+		clones:      f.clones,
+		agent:       factory,
+		ignoreRules: pipelinesIgnoreRules(generator),
+		getenv:      func(name string) string { return f.variables[name] },
+		now:         time.Now,
 	}
 }
 
@@ -240,12 +248,54 @@ func (f *refreshFixture) run(writes map[string]any, arguments ...string) outcome
 	require.NoError(f.t, err)
 	vector := append([]string{"run", "--config", f.configuration(), "--batch", string(batch),
 		"--work-dir", filepath.Join(f.root, "work"), "--max-turns", "7"}, arguments...)
+	if f.pipelinesDir != "" {
+		vector = append(vector, "--pipelines-dir", f.pipelinesDir)
+	}
 	if !slices.Contains(arguments, "--ci") {
 		vector = append(vector, "--ci", "plain")
 	}
 	var stdout, stderr bytes.Buffer
 	code := execute(f.t.Context(), vector, streams{stdout: &stdout, stderr: &stderr}, f.wiring())
 	return outcome{code: code, stdout: stdout.String(), stderr: stderr.String()}
+}
+
+// fakeGenerator stands in for the ignore-rules generator of a pipelines
+// checkout, recording its environment beside itself: it puts the shared block
+// above a `.gitignore` that lacks it, prints that the file is current when it
+// has it, and refuses a file holding a `malformed` line, as the generator
+// refuses malformed markers.
+const fakeGenerator = `set -eu
+env >> "${SCRIPTS_DIR}/generator-environment"
+begin='# >>> pipelines:begin'
+if [ -f .gitignore ] && grep -qx 'malformed' .gitignore; then
+  echo 'ERROR: .gitignore has a malformed pipelines block.' >&2
+  exit 2
+fi
+if [ -f .gitignore ] && grep -qxF "${begin}" .gitignore; then
+  echo 'Already up to date: .gitignore (common)'
+  exit 0
+fi
+generated="$(mktemp)"
+printf '%s\n' "${begin}" 'build/reports/' '# <<< pipelines:end' > "${generated}"
+if [ -s .gitignore ]; then
+  printf '\n' >> "${generated}"
+  cat .gitignore >> "${generated}"
+fi
+cat "${generated}" > .gitignore
+rm -f "${generated}"
+echo 'Updated .gitignore from fragments: common'
+`
+
+// sharedIgnoreBlock is the block fakeGenerator writes.
+const sharedIgnoreBlock = "# >>> pipelines:begin\nbuild/reports/\n# <<< pipelines:end\n"
+
+// withPipelines gives the run a fake pipelines checkout. `sh` runs its
+// generator, so the script needs no execute bit.
+func (f *refreshFixture) withPipelines() *refreshFixture {
+	f.t.Helper()
+	f.pipelinesDir = filepath.Join(f.root, "pipelines")
+	writeTree(f.t, f.pipelinesDir, map[string]string{"global/scripts/tools/gitignore/run.sh": fakeGenerator})
+	return f
 }
 
 // show returns a file of the refresh branch of remote.

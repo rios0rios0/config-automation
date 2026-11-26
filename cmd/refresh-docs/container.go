@@ -36,15 +36,21 @@ type hosting struct {
 // streams, and withheld names the variables it must not inherit.
 type agentFactory func(live io.Writer, withheld []string) repositories.AgentRepository
 
+// ignoreRulesFactory builds the generator of the shared ignore rules from a
+// pipelines checkout; an empty directory builds none, which leaves every
+// `.gitignore` alone.
+type ignoreRulesFactory func(directory string) (repositories.IgnoreRulesRepository, error)
+
 // dependencies are what the subcommands are wired from. Tests replace the
-// hosting adapters, the clones, and the agent; everything else is the
-// production wiring.
+// hosting adapters, the clones, the agent, and the environment the ignore-rules
+// generator starts from; everything else is the production wiring.
 type dependencies struct {
-	hosting map[entities.Provider]hosting
-	clones  repositories.ClonesRepository
-	agent   agentFactory
-	getenv  func(string) string
-	now     func() time.Time
+	hosting     map[entities.Provider]hosting
+	clones      repositories.ClonesRepository
+	agent       agentFactory
+	ignoreRules ignoreRulesFactory
+	getenv      func(string) string
+	now         func() time.Time
 }
 
 // claudeCodeAgent builds the agent over the claude CLI on PATH, starting from
@@ -55,9 +61,26 @@ func claudeCodeAgent(binary string, environ func() []string) agentFactory {
 	}
 }
 
+// pipelinesIgnoreRules builds the generator of a pipelines checkout, keeping
+// its variables from environ. An empty directory returns no generator, as
+// nil rather than a nil pointer, so the refresh can tell it is off.
+func pipelinesIgnoreRules(environ func() []string) ignoreRulesFactory {
+	return func(directory string) (repositories.IgnoreRulesRepository, error) {
+		if directory == "" {
+			return nil, nil
+		}
+		generator, err := infrastructure.NewPipelinesIgnoreRulesRepository(directory, environ)
+		if err != nil {
+			return nil, err
+		}
+		return generator, nil
+	}
+}
+
 // defaultDependencies is the production wiring: GitHub discovery over the
 // go-github listing the compliance audit uses, Azure DevOps discovery and
-// every provider's pull requests through gitforge, git, and the claude CLI.
+// every provider's pull requests through gitforge, git, the claude CLI, and
+// the pipelines checkout's ignore-rules generator.
 func defaultDependencies() dependencies {
 	return dependencies{
 		hosting: map[entities.Provider]hosting{
@@ -91,10 +114,11 @@ func defaultDependencies() dependencies {
 				},
 			},
 		},
-		clones: infrastructure.NewGitClonesRepository(),
-		agent:  claudeCodeAgent("claude", os.Environ),
-		getenv: os.Getenv,
-		now:    time.Now,
+		clones:      infrastructure.NewGitClonesRepository(),
+		agent:       claudeCodeAgent("claude", os.Environ),
+		ignoreRules: pipelinesIgnoreRules(os.Environ),
+		getenv:      os.Getenv,
+		now:         time.Now,
 	}
 }
 
@@ -108,24 +132,29 @@ func initializeCommands() commandSet {
 	}
 }
 
-// newRefreshCommand wires one batch's refresh for a provider and a token.
-// agentOutput receives Claude's output as it streams; withheld names the
-// variables the agent must not inherit.
-func newRefreshCommand(
-	wiring dependencies,
-	provider entities.Provider,
-	token string,
-	identity entities.GitIdentity,
-	agentOutput io.Writer,
-	withheld []string,
-) *commands.RefreshRepositoriesCommand {
-	workingTree := infrastructure.NewGitWorkingTreeRepository(identity)
+// refreshWiring is what one batch's refresh is built for: the provider and
+// its token, the commits' identity, where Claude's output streams, the
+// variables the agent must not inherit, and the ignore-rules generator, nil
+// when the run keeps no shared ignore rules.
+type refreshWiring struct {
+	provider    entities.Provider
+	token       string
+	identity    entities.GitIdentity
+	agentOutput io.Writer
+	withheld    []string
+	ignoreRules repositories.IgnoreRulesRepository
+}
+
+// newRefreshCommand wires one batch's refresh.
+func newRefreshCommand(wiring dependencies, batch refreshWiring) *commands.RefreshRepositoriesCommand {
+	workingTree := infrastructure.NewGitWorkingTreeRepository(batch.identity)
 	return commands.NewRefreshRepositoriesCommand(commands.RefreshRepositoriesDependencies{
 		WorkingTree:  workingTree,
 		Changes:      workingTree,
 		Clones:       wiring.clones,
-		Agent:        wiring.agent(agentOutput, withheld),
-		PullRequests: wiring.hosting[provider].pullRequests(token),
+		Agent:        wiring.agent(batch.agentOutput, batch.withheld),
+		PullRequests: wiring.hosting[batch.provider].pullRequests(batch.token),
+		IgnoreRules:  batch.ignoreRules,
 		Now:          wiring.now,
 	})
 }

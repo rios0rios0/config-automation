@@ -113,8 +113,11 @@ func TestConfiguration(t *testing.T) {
 		assert.Equal(t, entities.GitIdentity{Name: "fixture-bot", Email: "fixture-bot@example.invalid"},
 			loaded.identity())
 		assert.Equal(t, "chore: refreshed", loaded.pullRequestTitle())
-		assert.Contains(t, loaded.pullRequestBody(files), "From the fixture.\n\n")
-		assert.Contains(t, loaded.pullRequestBody(files), "keeps no `CLAUDE.md`")
+		assert.Contains(t, loaded.pullRequestBody(files, false), "From the fixture.\n\n")
+		assert.Contains(t, loaded.pullRequestBody(files, false), "keeps no `CLAUDE.md`")
+		assert.NotContains(t, loaded.pullRequestBody(files, false), ".gitignore")
+		assert.Contains(t, loaded.pullRequestBody(files, true),
+			"It also writes the shared ignore rules of `rios0rios0/pipelines` into `.gitignore`")
 	})
 }
 

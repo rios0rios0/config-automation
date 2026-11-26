@@ -16,6 +16,9 @@ const (
 	FailureCheckout FailureReason = "checkout"
 	// FailureLayout means the instruction-file layout pass failed.
 	FailureLayout FailureReason = "layout"
+	// FailureIgnoreRules means the shared ignore rules could not be written
+	// into `.gitignore`, such as when its block's markers are malformed.
+	FailureIgnoreRules FailureReason = "gitignore"
 	// FailureScope means the refresh manifest could not be built.
 	FailureScope FailureReason = "scope"
 	// FailureClaude means a Claude phase failed for any other reason.
