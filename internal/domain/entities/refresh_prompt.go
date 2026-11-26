@@ -17,11 +17,13 @@ var refreshPromptTemplate string
 
 // PromptParameters choose the conditional parts of the refresh prompt: the
 // rules for the one-line CLAUDE.md imports, the rules for Copilot's files,
-// and the guide whose links the refresh keeps valid.
+// the guide whose links the refresh keeps valid, and whether the host keeps
+// the shared ignore rules in `.gitignore`.
 type PromptParameters struct {
-	Claude   bool
-	Copilot  bool
-	GuideURL string
+	Claude      bool
+	Copilot     bool
+	GuideURL    string
+	IgnoreRules bool
 }
 
 // RenderRefreshPrompt renders the refresh prompt for one set of parameters.
@@ -38,10 +40,16 @@ func RenderRefreshPrompt(parameters PromptParameters) (string, error) {
 }
 
 // RepositoryPrompt appends what is specific to one repository to the
-// rendered prompt: its changelog convention and what the layout pass did.
-func RepositoryPrompt(base string, mode ChangelogMode, layoutNote string) string {
-	return base + "\n\n---\n\n## Changelog convention for this repository\n\n" + mode.Note() +
+// rendered prompt: its changelog convention, what the layout pass did, and,
+// when the host looked at `.gitignore`, what it did to the shared ignore
+// rules.
+func RepositoryPrompt(base string, mode ChangelogMode, layoutNote, ignoreRulesNote string) string {
+	prompt := base + "\n\n---\n\n## Changelog convention for this repository\n\n" + mode.Note() +
 		"\n\n## Guidance layout for this repository\n\n" + layoutNote
+	if ignoreRulesNote != "" {
+		prompt += "\n\n## Shared ignore rules for this repository\n\n" + ignoreRulesNote
+	}
+	return prompt
 }
 
 // AuditPrompt is the read-only prompt-audit request. A leading slash invokes

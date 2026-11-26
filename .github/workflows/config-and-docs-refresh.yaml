@@ -124,12 +124,21 @@ jobs:
           scripts/install-refresh-tools.sh "${RUNNER_TEMP}/refresh-bin"
           echo "${RUNNER_TEMP}/refresh-bin" >> "${GITHUB_PATH}"
 
+      # The shared ignore rules and the generator that picks them for a repository are
+      # single-sourced in pipelines, as the release reconciliation's detector is: clone its
+      # default branch rather than vendoring a copy, so each `.gitignore` the refresh writes
+      # carries the rules of the pipeline that writes the files, exactly as `make gitignore`
+      # writes them.
+      - name: 'Fetch the shared ignore rules'
+        run: 'git clone --depth 1 --quiet https://github.com/rios0rios0/pipelines.git "${RUNNER_TEMP}/pipelines"'
+
       # `refresh-docs run` clones each repo of the batch, moves it into the
-      # AGENTS.md layout, runs the read-only prompt audit and the scoped
-      # refresh, guards the changelog and every added line, and opens or
-      # updates the PR on the refresh branch; README and AGENTS.md describe
-      # each step. A failing repo is recorded and the batch moves on, so the
-      # leg turns red only after its summary.
+      # AGENTS.md layout, writes the shared ignore rules into its `.gitignore`,
+      # runs the read-only prompt audit and the scoped refresh, guards the
+      # changelog and every added line, and opens or updates the PR on the
+      # refresh branch; README and AGENTS.md describe each step. A failing repo
+      # is recorded and the batch moves on, so the leg turns red only after its
+      # summary.
       - name: 'Process batch ${{ matrix.batch.name }}'
         env:
           # Every batch is single-owner, so this is the fine-grained PAT of exactly
@@ -143,7 +152,7 @@ jobs:
           CLAUDE_EFFORT: ${{ vars.CLAUDE_EFFORT || 'high' }}
           REPOS: ${{ toJSON(matrix.batch.repos) }}
           MAX_TURNS: ${{ inputs.max_turns || '50' }}
-        run: 'refresh-docs run --config .config-automation.yaml --work-dir "${RUNNER_TEMP}/refresh-work"'
+        run: 'refresh-docs run --config .config-automation.yaml --work-dir "${RUNNER_TEMP}/refresh-work" --pipelines-dir "${RUNNER_TEMP}/pipelines"'
 
   # The discover job deliberately keeps going when an owner cannot be enumerated, so the
   # reachable owners still get refreshed. This job is what stops that tolerance from

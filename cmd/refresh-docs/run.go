@@ -39,15 +39,16 @@ func defaultTokenVariables() map[entities.Provider]string {
 
 // runOptions are the flags of `refresh-docs run`.
 type runOptions struct {
-	config    string
-	batch     string
-	tokenEnv  string
-	model     string
-	effort    string
-	maxTurns  int
-	workDir   string
-	dialect   string
-	overrides instructionFlags
+	config       string
+	batch        string
+	tokenEnv     string
+	model        string
+	effort       string
+	maxTurns     int
+	workDir      string
+	dialect      string
+	pipelinesDir string
+	overrides    instructionFlags
 }
 
 // refreshBatch refreshes the repositories of one matrix leg. The batch is
@@ -80,21 +81,34 @@ func refreshBatch(ctx context.Context, arguments []string, output streams, wirin
 	if isUnsetToken(token) {
 		return failure(output, "run", fmt.Errorf("%w: %s is empty or not set", errNoToken, tokenEnv))
 	}
+	ignoreRules, err := wiring.ignoreRules(options.pipelinesDir)
+	if err != nil {
+		return failure(output, "run", fmt.Errorf("--pipelines-dir: %w", err))
+	}
 	workDirectory, cleanup, err := scratchDirectory(options.workDir)
 	if err != nil {
 		return failure(output, "run", err)
 	}
 	defer cleanup()
 	withheld := slices.Concat(hostingTokenVariables(), loaded.referencedTokenVariables(), []string{tokenEnv})
-	command := newRefreshCommand(wiring, provider, token, loaded.identity(), printer.AgentOutput(), withheld)
+	command := newRefreshCommand(wiring, refreshWiring{
+		provider: provider, token: token, identity: loaded.identity(), agentOutput: printer.AgentOutput(),
+		withheld: withheld, ignoreRules: ignoreRules,
+	})
 	code := 0
 	command.Execute(ctx, commands.RefreshRepositoriesInput{
 		Targets: targets, WorkDirectory: workDirectory, Token: token,
 		Settings: commands.RefreshSettings{
-			Provider: provider, InstructionFiles: files, GuideURL: loaded.guideURL(),
-			Branch: loaded.branch(), CommitMessage: defaultCommitMessage,
-			PullRequestTitle: loaded.pullRequestTitle(), PullRequestBody: loaded.pullRequestBody(files),
-			Model: options.model, Effort: options.effort, MaxTurns: options.maxTurns,
+			Provider:         provider,
+			InstructionFiles: files,
+			GuideURL:         loaded.guideURL(),
+			Branch:           loaded.branch(),
+			CommitMessage:    defaultCommitMessage,
+			PullRequestTitle: loaded.pullRequestTitle(),
+			PullRequestBody:  loaded.pullRequestBody(files, ignoreRules != nil),
+			Model:            options.model,
+			Effort:           options.effort,
+			MaxTurns:         options.maxTurns,
 		},
 	}, refreshListeners(printer, &code))
 	return code
@@ -143,6 +157,8 @@ func parseRunOptions(arguments []string, getenv func(string) string) (runOptions
 	flags.IntVar(&options.maxTurns, "max-turns", maxTurns, "turn limit of each Claude phase")
 	flags.StringVar(&options.workDir, "work-dir", "", "directory for the scratch clones")
 	flags.StringVar(&options.dialect, "ci", dialectAuto, "output dialect")
+	flags.StringVar(&options.pipelinesDir, "pipelines-dir", "",
+		"checkout of rios0rios0/pipelines whose shared ignore rules every .gitignore keeps (empty: off)")
 	options.overrides.register(flags)
 	if err = flags.Parse(arguments); err != nil {
 		return options, err

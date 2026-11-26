@@ -1,0 +1,3 @@
+kind: 'Changed'
+body: 'regenerated the shared ignore rules block of `.gitignore` from `rios0rios0/pipelines`, which adds `.ansible/`, `/go-test-selection.txt`, the golangci-lint binary `make lint` installs into `bin/`, and the `.go/` module cache'
+time: '2026-11-26T18:52:11.074534098Z'

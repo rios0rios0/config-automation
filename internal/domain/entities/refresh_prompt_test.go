@@ -72,6 +72,39 @@ func TestRenderRefreshPrompt(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotContains(t, prompt, "Keep links to the development guide valid")
 	})
+
+	t.Run("should hand .gitignore to the host and ask for its record when the host keeps the ignore rules",
+		func(t *testing.T) {
+			t.Parallel()
+			// given
+			parameters := entities.PromptParameters{Claude: true, IgnoreRules: true}
+
+			// when
+			prompt, err := entities.RenderRefreshPrompt(parameters)
+
+			// then
+			require.NoError(t, err)
+			assert.NotContains(t, prompt, "{{")
+			assert.Contains(t, prompt, "`.gitignore` is the host's: you hold no grant for it, so never edit it.")
+			assert.Contains(t, prompt, "or the shared ignore rules section says the host changed `.gitignore`.**")
+			assert.Contains(
+				t,
+				prompt,
+				"A host change to the instruction files or to `.gitignore` is part of this refresh",
+			)
+			assert.Contains(t, prompt, "the host lists no layout changes and no change to `.gitignore`, do nothing.")
+		})
+
+	t.Run("should not mention .gitignore when the host leaves it alone", func(t *testing.T) {
+		t.Parallel()
+		// given / when
+		prompt, err := entities.RenderRefreshPrompt(entities.PromptParameters{Claude: true, Copilot: true})
+
+		// then
+		require.NoError(t, err)
+		assert.NotContains(t, prompt, ".gitignore")
+		assert.Contains(t, prompt, "remain report-only.\n\n## Your task")
+	})
 }
 
 func TestAuditPrompt(t *testing.T) {
@@ -112,7 +145,7 @@ func TestRefreshPrompt(t *testing.T) {
 			Existing: []string{"README.md", "packages/api/AGENTS.md"}, Creatable: []string{"AGENTS.md"},
 			Managed: []string{"packages/api/CLAUDE.md"}, Removed: []string{".github/copilot-instructions.md"},
 		}
-		repository := entities.RepositoryPrompt("Base prompt.", entities.ChangelogNone, "No host changes.")
+		repository := entities.RepositoryPrompt("Base prompt.", entities.ChangelogNone, "No host changes.", "")
 
 		// when
 		prompt := entities.RefreshPrompt(repository, scope, "AGENTS.md:4: stale command")
@@ -125,5 +158,19 @@ func TestRefreshPrompt(t *testing.T) {
 		assert.Contains(t, prompt, "must not be recreated:\n- .github/copilot-instructions.md")
 		assert.Contains(t, prompt, "## Prompt-audit findings (review data)\n\nAGENTS.md:4: stale command")
 		assert.NotContains(t, prompt, "packages/api/CLAUDE.md", "a host-managed import was offered for edits")
+		assert.NotContains(t, prompt, "## Shared ignore rules for this repository")
+	})
+
+	t.Run("should say what the host did to .gitignore after the guidance layout", func(t *testing.T) {
+		t.Parallel()
+		// given
+		note := entities.DescribeIgnoreRules(entities.IgnoreRulesReport{Outcome: entities.IgnoreRulesUpdated})
+
+		// when
+		prompt := entities.RepositoryPrompt("Base prompt.", entities.ChangelogNone, "No host changes.", note)
+
+		// then
+		assert.Contains(t, prompt, "## Guidance layout for this repository\n\nNo host changes.\n\n"+
+			"## Shared ignore rules for this repository\n\n- Updated the shared ignore rules")
 	})
 }

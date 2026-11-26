@@ -1,7 +1,9 @@
 # The config-and-docs refresh as Azure Pipelines jobs: `discover` lists the
 # organizations of the consumer's configuration file into a matrix, each
 # `refresh` leg runs `refresh-docs run` on one batch, and `verify` fails the run
-# when an organization could not be listed. The consumer owns the
+# when an organization could not be listed. With `pipelinesRepository` set, each
+# leg also writes the shared ignore rules of rios0rios0/pipelines into every
+# repository's `.gitignore`. The consumer owns the
 # stage around these jobs, its condition and its `dependsOn`, and its
 # variables, which must provide the secrets AZURE_DEVOPS_PAT and
 # CLAUDE_CODE_OAUTH_TOKEN; it may also set CLAUDE_MODEL and CLAUDE_EFFORT. Every
@@ -14,6 +16,13 @@ parameters:
   # The full commit SHA the consumer pinned that resource's tag to.
   - name: 'expectedSha'
     type: 'string'
+  # The repository resource alias under which the consumer declares
+  # rios0rios0/pipelines. Each refresh leg checks it out and writes its shared
+  # ignore rules into every repository's `.gitignore`, as `make gitignore` does;
+  # empty leaves every `.gitignore` alone.
+  - name: 'pipelinesRepository'
+    type: 'string'
+    default: ''
   # The configuration file, relative to the consumer's repository root.
   - name: 'configFile'
     type: 'string'
@@ -87,6 +96,11 @@ jobs:
           toolRepository: '${{ parameters.toolRepository }}'
           expectedSha: '${{ parameters.expectedSha }}'
 
+      - ${{ if ne(parameters.pipelinesRepository, '') }}:
+          - checkout: '${{ parameters.pipelinesRepository }}'
+            path: 'pipelines'
+            displayName: 'Checkout pipelines (the shared ignore rules)'
+
       # Claude Code declares `engines.node >=22.0.0`; npm only warns
       # (EBADENGINE) below that floor, so keep this major at or above it.
       - task: 'UseNode@1'
@@ -106,9 +120,13 @@ jobs:
       # through `environment`. Without one, the token is AZURE_DEVOPS_PAT.
       - bash: |
           set -euo pipefail
-          refresh-docs run --config "$(Pipeline.Workspace)/consumer/${CONFIG_FILE}" \
-            --token-env "${CREDENTIAL:-AZURE_DEVOPS_PAT}" \
-            --work-dir "$(Agent.TempDirectory)/refresh-work" --ci azure-pipelines
+          arguments=(--config "$(Pipeline.Workspace)/consumer/${CONFIG_FILE}"
+            --token-env "${CREDENTIAL:-AZURE_DEVOPS_PAT}"
+            --work-dir "$(Agent.TempDirectory)/refresh-work" --ci azure-pipelines)
+          if [ -n "${PIPELINES_DIRECTORY:-}" ]; then
+            arguments+=(--pipelines-dir "${PIPELINES_DIRECTORY}")
+          fi
+          refresh-docs run "${arguments[@]}"
         workingDirectory: '$(Pipeline.Workspace)/tool'
         env:
           AZURE_DEVOPS_PAT: '$(AZURE_DEVOPS_PAT)'
@@ -119,6 +137,8 @@ jobs:
           REPOS: '$(repos)'
           CREDENTIAL: '$(credential)'
           MAX_TURNS: '${{ parameters.maxTurns }}'
+          ${{ if ne(parameters.pipelinesRepository, '') }}:
+            PIPELINES_DIRECTORY: '$(Pipeline.Workspace)/pipelines'
           ${{ each variable in parameters.environment }}:
             ${{ variable.key }}: '${{ variable.value }}'
         displayName: 'Process batch'

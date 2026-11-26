@@ -15,7 +15,7 @@ The CLI takes its owners from the `HARDEN_OWNER` environment variable, a comma-s
 ## Features
 
 - **Repo compliance audit** — daily cron that fails CI if any repo in any configured owner drifts from the hardening policy (Dependabot, secret scanning, push protection, branch protection, `main-protection` ruleset, merge settings, wiki/projects flags, and GitHub Actions disabled on forks).
-- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork, non-archived, non-disabled repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. `AGENTS.md` is each repository's instruction file, with a one-line `CLAUDE.md` importing it; the refresh moves legacy `CLAUDE.md` guidance into that layout, then audits and refines `AGENTS.md` alongside existing skills and references, agents, custom commands, README, and CONTRIBUTING. Exact paths are discovered separately for each repository. The whole refresh is the `refresh-docs` Go CLI, so the same code runs on GitHub (this repository's workflow) and on Azure DevOps (a [jobs template](#running-on-azure-devops) another organization pins).
+- **Config and docs refresh** — weekly matrix job that runs Claude Code prompt-audit and refresh against eligible non-fork, non-archived, non-disabled repos, updates the in-scope configuration and documentation files only when they've drifted, records the change using the repository's changelog convention, and opens a single PR per repo. `AGENTS.md` is each repository's instruction file, with a one-line `CLAUDE.md` importing it; the refresh moves legacy `CLAUDE.md` guidance into that layout, then audits and refines `AGENTS.md` alongside existing skills and references, agents, custom commands, README, and CONTRIBUTING. It also keeps the [shared ignore rules](#shared-ignore-rules) of [`pipelines`](https://github.com/rios0rios0/pipelines) in each repository's `.gitignore`. Exact paths are discovered separately for each repository. The whole refresh is the `refresh-docs` Go CLI, so the same code runs on GitHub (this repository's workflow) and on Azure DevOps (a [jobs template](#running-on-azure-devops) another organization pins).
 - **Sonar analysis policy** — daily job that applies the fleet's SonarQube Cloud analysis policy to every project of the `rios0rios0` organization: it adds the `sonar.issue.ignore.multicriteria` pairs the fleet needs and triages the findings those rules already raised. Today the policy silences `githubactions:S7637` ("use a full commit SHA") on YAML, because every repository calls the shared CI as `uses: rios0rios0/pipelines/.github/workflows/<name>.yaml@main` and that floating reference is deliberate.
 - **Release reconciliation** — weekly job that diffs every repo's released `CHANGELOG.md` versions against its git tags and re-pushes a missing tag at its bump commit, re-triggering the [`pipelines`](https://github.com/rios0rios0/pipelines) tag-push delivery path to recover a "bumped but never released" gap (a bump whose `main` run failed the quality gate). It pushes only a version above the repository's highest SemVer tag, because a tag push deploys: a lower version is a bump a later release superseded, and is skipped and logged. Delegates detection to the single-sourced pipelines primitive and reuses the same per-owner refresh PATs — no new secret required.
 
@@ -192,6 +192,34 @@ before the audit, the manifest lists them under `removed` (staged and drift-chec
 never granted), the prompt tells Claude not to recreate them and to record the
 removal, and the deletion alone opens the PR.
 
+### Shared ignore rules
+
+The pipeline of [`rios0rios0/pipelines`](https://github.com/rios0rios0/pipelines) writes
+reports, caches and tool binaries into every repository it builds, and lists them in
+`global/gitignore/`, one fragment per language plus `common`. Its `make gitignore` writes
+the fragments a repository needs into a delimited block at the top of that repository's
+`.gitignore`, between `# >>> pipelines:begin` and `# <<< pipelines:end`, and never touches
+a line outside it. Given `--pipelines-dir`, a checkout of that repository, `refresh-docs run`
+runs the same generator on every clone before the audit, so each week's PR also brings the
+block in step with the pipeline that writes the files:
+
+- Which fragments a repository gets is the generator's decision, from the languages its
+  `Makefile` and its CI import from the pipeline, so the refresh and a developer's
+  `make gitignore` always write the same block. Nothing of the rules is copied here.
+- The host owns `.gitignore`: Claude holds no grant for it, and the prompt tells it what the
+  host changed so it records the change in the repository's changelog.
+- A changed `.gitignore` is drift on its own, so it opens the PR even when no documentation
+  drifted; a block that is already current changes nothing.
+- A `.gitignore` that is a symlink or not a regular file is left alone with a warning, since
+  the generator writes through the path; a generator failure, such as malformed block
+  markers, fails that repository as `gitignore:` before Claude runs.
+- The generator starts with only `PATH`, `TMPDIR` and the locale variables, plus
+  `SCRIPTS_DIR`, so no token reaches it.
+
+The GitHub workflow clones the default branch of `pipelines` for every leg. The Azure
+Pipelines template checks out the repository resource its consumer names in
+`pipelinesRepository`, and leaves every `.gitignore` alone when that is empty.
+
 ## Usage
 
 Every workflow runs on cron; no manual action is needed in steady state.
@@ -246,7 +274,8 @@ refresh-docs discover --config .config-automation.yaml [--repo <repo>] [--batch-
 
 # Refresh one batch (JSON from `discover`, or the REPOS variable) with the token
 # in GH_TOKEN (GitHub) or AZURE_DEVOPS_PAT (Azure DevOps), or in --token-env
-refresh-docs run --config .config-automation.yaml --batch '<json>' [--copilot=false]
+refresh-docs run --config .config-automation.yaml --batch '<json>' [--copilot=false] \
+  [--pipelines-dir <checkout of rios0rios0/pipelines>]
 
 # The layout and manifest steps on their own, for a local clone
 refresh-docs layout [--provider github|azuredevops] <repository>
@@ -274,6 +303,10 @@ resources:
       name: 'rios0rios0/config-automation'
       endpoint: '<github-service-connection>'
       ref: 'refs/tags/<release>'
+    - repository: 'pipelines'         # the shared ignore rules
+      type: 'github'
+      name: 'rios0rios0/pipelines'
+      endpoint: '<github-service-connection>'
 
 variables:
   - group: '<variable-group>'   # AZURE_DEVOPS_PAT and CLAUDE_CODE_OAUTH_TOKEN (secrets)
@@ -297,6 +330,7 @@ stages:
         parameters:
           expectedSha: '${{ variables.configAutomationSha }}'
           configFile: '.config-automation.yaml'
+          pipelinesRepository: 'pipelines'
           environment:                # the variables its configuration reads
             GIT_USER_NAME: '$(GIT_USER_NAME)'
             GIT_USER_EMAIL: '$(GIT_USER_EMAIL)'
@@ -306,7 +340,10 @@ The consumer's `.config-automation.yaml` names its organization with
 `type: 'azuredevops'` and `token: '${AZURE_DEVOPS_PAT}'`; any other `${VAR}` it reads
 must be mapped through `environment`, since a step sees no secret variable unless it
 is mapped. The template also takes `repo` (one `project/name`), `batchSize`,
-`maxParallel`, and `maxTurns`, re-checks the pinned commit after every checkout,
+`maxParallel`, `maxTurns`, and `pipelinesRepository`, the alias of the
+`rios0rios0/pipelines` resource whose [shared ignore rules](#shared-ignore-rules) each
+leg writes into `.gitignore` (empty, the default, leaves `.gitignore` alone),
+re-checks the pinned commit after every checkout,
 installs Go from this repository's `go.mod`, and reads `CLAUDE_MODEL` and
 `CLAUDE_EFFORT` from the consumer's variables when set. Its `verify` job fails the run
 when an organization could not be listed, after the reachable ones were refreshed.

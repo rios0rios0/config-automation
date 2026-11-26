@@ -13,10 +13,10 @@ import (
 )
 
 // RefreshRepositoriesCommand refreshes one batch of repositories in
-// sequence: clone, instruction-file layout, scope, the read-only audit and the
-// scoped refresh, the guards, drift, and the pull request. Every failure is
-// local to the repository that caused it; only a usage limit stops the batch
-// from calling Claude again.
+// sequence: clone, instruction-file layout, the shared ignore rules, scope,
+// the read-only audit and the scoped refresh, the guards, drift, and the pull
+// request. Every failure is local to the repository that caused it; only a
+// usage limit stops the batch from calling Claude again.
 type RefreshRepositoriesCommand struct {
 	workingTree  repositories.WorkingTreeRepository
 	changes      repositories.ChangesRepository
@@ -24,7 +24,9 @@ type RefreshRepositoriesCommand struct {
 	agent        repositories.AgentRepository
 	pullRequests repositories.PullRequestsRepository
 	layout       *NormalizeAgentsLayoutCommand
+	ignoreRules  *SyncIgnoreRulesCommand
 	scope        *DiscoverRefreshScopeCommand
+	syncsIgnores bool
 	now          func() time.Time
 }
 
@@ -36,7 +38,10 @@ type RefreshRepositoriesDependencies struct {
 	Clones       repositories.ClonesRepository
 	Agent        repositories.AgentRepository
 	PullRequests repositories.PullRequestsRepository
-	Now          func() time.Time
+	// IgnoreRules generates the shared ignore rules of rios0rios0/pipelines
+	// into each clone's `.gitignore`; nil leaves every `.gitignore` alone.
+	IgnoreRules repositories.IgnoreRulesRepository
+	Now         func() time.Time
 }
 
 // NewRefreshRepositoriesCommand is the constructor the composition root calls.
@@ -48,7 +53,9 @@ func NewRefreshRepositoriesCommand(dependencies RefreshRepositoriesDependencies)
 		agent:        dependencies.Agent,
 		pullRequests: dependencies.PullRequests,
 		layout:       NewNormalizeAgentsLayoutCommand(dependencies.WorkingTree),
+		ignoreRules:  NewSyncIgnoreRulesCommand(dependencies.WorkingTree, dependencies.IgnoreRules),
 		scope:        NewDiscoverRefreshScopeCommand(dependencies.WorkingTree),
+		syncsIgnores: dependencies.IgnoreRules != nil,
 		now:          dependencies.Now,
 	}
 }
@@ -102,7 +109,7 @@ func (c *RefreshRepositoriesCommand) Execute(
 	settings := input.Settings
 	base, err := entities.RenderRefreshPrompt(entities.PromptParameters{
 		Claude: settings.InstructionFiles.Claude, Copilot: settings.InstructionFiles.Copilot,
-		GuideURL: settings.GuideURL,
+		GuideURL: settings.GuideURL, IgnoreRules: c.syncsIgnores,
 	})
 	if err != nil {
 		listeners.OnError(err)
@@ -159,20 +166,21 @@ func (b *refreshBatch) refresh(ctx context.Context, target entities.RefreshTarge
 
 // repositoryRefresh is the state of one repository's refresh.
 type repositoryRefresh struct {
-	batch  *refreshBatch
-	target entities.RefreshTarget
-	name   string
-	root   string
-	layout entities.AgentsLayoutReport
-	scope  entities.RefreshScope
-	mode   entities.ChangelogMode
+	batch   *refreshBatch
+	target  entities.RefreshTarget
+	name    string
+	root    string
+	layout  entities.AgentsLayoutReport
+	ignores entities.IgnoreRulesReport
+	scope   entities.RefreshScope
+	mode    entities.ChangelogMode
 }
 
 // execute runs the steps in order; each returns false once it has recorded
 // the repository's outcome.
 func (r *repositoryRefresh) execute(ctx context.Context) {
 	steps := []func(context.Context) bool{
-		r.prepare, r.normalize, r.discoverScope, r.detectChangelog, r.runAgent,
+		r.prepare, r.normalize, r.syncIgnoreRules, r.discoverScope, r.detectChangelog, r.runAgent,
 		r.normalizeAgain, r.guardChangelog, r.publish,
 	}
 	for _, step := range steps {
@@ -239,6 +247,33 @@ func (r *repositoryRefresh) normalize(ctx context.Context) bool {
 func (r *repositoryRefresh) normalizeAgain(ctx context.Context) bool {
 	if _, err := r.runLayout(ctx); err != nil {
 		return r.fail(entities.FailureLayout, err)
+	}
+	return true
+}
+
+// syncIgnoreRules writes the shared ignore rules into the root `.gitignore`
+// before the agent runs, so the prompt can ask Claude to record the change.
+// The host owns the file: Claude holds no grant for it, and a change to it is
+// drift on its own.
+func (r *repositoryRefresh) syncIgnoreRules(ctx context.Context) bool {
+	var failure error
+	r.batch.command.ignoreRules.Execute(
+		ctx,
+		SyncIgnoreRulesInput{Root: r.root},
+		SyncIgnoreRulesListeners{
+			OnSuccess: func(result entities.IgnoreRulesReport) { r.ignores = result },
+			OnError:   func(err error) { failure = err },
+		},
+	)
+	if failure != nil {
+		return r.fail(entities.FailureIgnoreRules, failure)
+	}
+	if r.ignores.Output != "" {
+		r.batch.listeners.OnUntrustedNotice("--> " + r.ignores.Output)
+	}
+	if r.ignores.Outcome == entities.IgnoreRulesSkipped {
+		r.batch.listeners.OnWarning("Left out of the shared ignore rules: " + quoted(entities.IgnoreFile) +
+			" is a symlink or not a regular file")
 	}
 	return true
 }
@@ -334,7 +369,8 @@ func (r *repositoryRefresh) runAgentPhases(ctx context.Context) (entities.AgentR
 	result, err := r.batch.command.agent.Audit(ctx, audit)
 	if err == nil {
 		listeners.OnNotice("--> refresh guidance from verified findings")
-		prompt := entities.RepositoryPrompt(r.batch.basePrompt, r.mode, r.layout.Note)
+		prompt := entities.RepositoryPrompt(r.batch.basePrompt, r.mode, r.layout.Note,
+			entities.DescribeIgnoreRules(r.ignores))
 		grant := r.mode.Grant()
 		result, err = r.batch.command.agent.Refresh(ctx, entities.AgentRun{
 			Directory: r.root, Prompt: entities.RefreshPrompt(prompt, r.scope, result.Report),
@@ -442,15 +478,19 @@ func (r *repositoryRefresh) publish(ctx context.Context) bool {
 }
 
 // measureDrift returns the manifest paths that differ from HEAD, whitespace
-// aside. A new file counts once it is marked intent-to-add; a tracked file
-// that is gone, removed by the host or deleted by the refresh, counts as a
-// deletion. The changelog is never part of drift, so a stray changelog-only
-// edit cannot open a pull request.
+// aside, and `.gitignore` when the host changed it. A new file counts once it
+// is marked intent-to-add; a tracked file that is gone, removed by the host or
+// deleted by the refresh, counts as a deletion. The changelog is never part of
+// drift, so a stray changelog-only edit cannot open a pull request.
 func (r *repositoryRefresh) measureDrift(ctx context.Context) ([]string, bool) {
 	command := r.batch.command
 	tracked := slices.Concat(r.scope.Existing, r.scope.Removed)
+	paths := r.scope.Paths
+	if r.ignores.Changed() {
+		paths = append(slices.Clone(paths), entities.IgnoreFile)
+	}
 	present, candidates := []string{}, []string{}
-	for _, path := range r.scope.Paths {
+	for _, path := range paths {
 		kind, err := command.workingTree.FindKind(ctx, r.root, path)
 		if err != nil {
 			return nil, r.fail(entities.FailureStage, err)
